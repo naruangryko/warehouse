@@ -2,20 +2,19 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Trash2, Download, Upload, FileText, Image, File, X, Calendar } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Download, Upload, FileText, Image, File, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/lib/supabase';
 
 type Resource = {
   id: number;
   title: string;
   category: string;
   description: string;
-  file_name: string;
-  file_size: string;
-  file_type: 'pdf' | 'image' | 'doc' | 'etc';
-  file_url: string;
-  created_at: string;
+  fileName: string;
+  fileSize: string;
+  fileType: 'pdf' | 'image' | 'doc' | 'etc';
+  uploadDate: string;
+  fileData?: string;        // Base64로 저장 (실제 다운로드용)
 };
 
 const categories = ["회의록", "활동사진", "홍보물", "자료집", "기타"];
@@ -24,7 +23,6 @@ export default function ResourcesPage() {
   const [resources, setResources] = useState<Resource[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
@@ -32,96 +30,19 @@ export default function ResourcesPage() {
     category: '회의록',
     description: '',
     file: null as File | null,
+    fileName: '',
+    fileSize: '',
+    fileType: 'pdf' as 'pdf' | 'image' | 'doc' | 'etc',
   });
 
   useEffect(() => {
-    fetchResources();
+    const saved = localStorage.getItem('resources');
+    if (saved) setResources(JSON.parse(saved));
   }, []);
 
-  const fetchResources = async () => {
-    const { data, error } = await supabase
-      .from('resources')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('자료 불러오기 실패:', error);
-    } else {
-      setResources(data || []);
-    }
-  };
-
-  const handleFileSelect = (file: File) => {
-    setFormData({
-      ...formData,
-      file,
-      title: formData.title || file.name.replace(/\.[^/.]+$/, ""),
-    });
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files[0]) {
-      handleFileSelect(e.dataTransfer.files[0]);
-    }
-  };
-
-  const uploadResource = async () => {
-    if (!formData.file) {
-      alert("파일을 선택해주세요.");
-      return;
-    }
-    if (!formData.title.trim()) {
-      alert("자료 제목을 입력해주세요.");
-      return;
-    }
-
-    setUploading(true);
-
-    try {
-      const file = formData.file;
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-
-      // Supabase Storage에 파일 업로드
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('resources')
-        .upload(fileName, file, { upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      // 공개 URL 가져오기
-      const { data: urlData } = supabase.storage
-        .from('resources')
-        .getPublicUrl(fileName);
-
-      // DB에 메타데이터 저장
-      const { error: dbError } = await supabase
-        .from('resources')
-        .insert({
-          title: formData.title,
-          category: formData.category,
-          description: formData.description || '설명이 없습니다.',
-          file_name: file.name,
-          file_size: (file.size / 1024 / 1024).toFixed(1) + ' MB',
-          file_type: getFileType(file),
-          file_url: urlData.publicUrl,
-        });
-
-      if (dbError) throw dbError;
-
-      alert('자료가 성공적으로 업로드되었습니다!');
-      setShowForm(false);
-      setFormData({ title: '', category: '회의록', description: '', file: null });
-      fetchResources();
-
-    } catch (error: any) {
-      console.error(error);
-      alert('업로드 실패: ' + error.message);
-    } finally {
-      setUploading(false);
-    }
+  const saveResources = (newResources: Resource[]) => {
+    setResources(newResources);
+    localStorage.setItem('resources', JSON.stringify(newResources));
   };
 
   const getFileType = (file: File): 'pdf' | 'image' | 'doc' | 'etc' => {
@@ -131,21 +52,110 @@ export default function ResourcesPage() {
     return 'etc';
   };
 
-  const deleteResource = async (id: number, fileUrl: string) => {
-    if (!confirm('정말로 삭제하시겠습니까?')) return;
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
 
-    try {
-      // Storage에서 파일 삭제
-      const fileName = fileUrl.split('/').pop();
-      if (fileName) {
-        await supabase.storage.from('resources').remove([fileName]);
-      }
+  const handleFileSelect = (file: File) => {
+    const type = getFileType(file);
+    
+    setFormData({
+      ...formData,
+      file,
+      fileName: file.name,
+      fileSize: formatFileSize(file.size),
+      fileType: type,
+      title: formData.title || file.name.replace(/\.[^/.]+$/, ""), // 확장자 제거
+    });
+  };
 
-      // DB에서 삭제
-      await supabase.from('resources').delete().eq('id', id);
-      fetchResources();
-    } catch (error) {
-      alert('삭제 중 오류가 발생했습니다.');
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileSelect(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const addResource = async () => {
+    if (!formData.file && !formData.title) {
+      alert("파일을 선택하거나 제목을 입력해주세요.");
+      return;
+    }
+
+    let fileData = '';
+    let fileName = formData.fileName || '파일명.pdf';
+    let fileSize = formData.fileSize || '2.4 MB';
+
+    if (formData.file) {
+      const reader = new FileReader();
+      fileData = await new Promise((resolve) => {
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.readAsDataURL(formData.file!);
+      });
+      fileName = formData.file.name;
+      fileSize = formatFileSize(formData.file.size);
+    }
+
+    const newResource: Resource = {
+      id: Date.now(),
+      title: formData.title || fileName.replace(/\.[^/.]+$/, ""),
+      category: formData.category,
+      description: formData.description || "자료 설명이 없습니다.",
+      fileName: fileName,
+      fileSize: fileSize,
+      fileType: formData.fileType,
+      uploadDate: new Date().toISOString().split('T')[0],
+      fileData: fileData || undefined,
+    };
+
+    const updated = [newResource, ...resources];
+    saveResources(updated);
+    
+    setShowForm(false);
+    setFormData({
+      title: '',
+      category: '회의록',
+      description: '',
+      file: null,
+      fileName: '',
+      fileSize: '',
+      fileType: 'pdf',
+    });
+
+    alert('자료가 성공적으로 업로드되었습니다!');
+  };
+
+  const deleteResource = (id: number) => {
+    if (!confirm('정말 삭제하시겠습니까?')) return;
+    const updated = resources.filter(r => r.id !== id);
+    saveResources(updated);
+  };
+
+  const downloadResource = (resource: Resource) => {
+    if (resource.fileData) {
+      const link = document.createElement('a');
+      link.href = resource.fileData;
+      link.download = resource.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      alert('다운로드할 파일 데이터가 없습니다. (이전 버전에 업로드된 파일)');
     }
   };
 
@@ -185,20 +195,17 @@ export default function ResourcesPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {resources.map((resource) => (
               <div key={resource.id} className="bg-white rounded-3xl p-7 hover:shadow-lg transition group">
-                <div className="flex justify-between items-start">
+                <div className="flex justify-between">
                   <div className="flex gap-5">
-                    {getFileIcon(resource.file_type)}
+                    {getFileIcon(resource.fileType)}
                     <div>
-                      <h3 className="font-bold text-lg leading-tight">{resource.title}</h3>
-                      <p className="text-sm text-gray-500 mt-2 flex items-center gap-1.5">
-                        <Calendar className="w-4 h-4" />
-                        {resource.created_at.substring(0, 10)}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">{resource.file_name} • {resource.file_size}</p>
+                      <h3 className="font-bold text-lg pr-8 leading-tight">{resource.title}</h3>
+                      <p className="text-sm text-gray-500 mt-2">{resource.uploadDate}</p>
+                      <p className="text-xs text-gray-400 mt-1">{resource.fileName} • {resource.fileSize}</p>
                     </div>
                   </div>
                   <button
-                    onClick={() => deleteResource(resource.id, resource.file_url)}
+                    onClick={() => deleteResource(resource.id)}
                     className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition"
                   >
                     <Trash2 className="w-5 h-5" />
@@ -206,7 +213,7 @@ export default function ResourcesPage() {
                 </div>
 
                 <div className="mt-5">
-                  <span className="inline-block bg-blue-100 text-blue-700 text-xs px-4 py-1.5 rounded-2xl">
+                  <span className="bg-blue-100 text-blue-700 text-xs px-4 py-1.5 rounded-2xl">
                     {resource.category}
                   </span>
                 </div>
@@ -216,10 +223,10 @@ export default function ResourcesPage() {
                 )}
 
                 <Button 
-                  onClick={() => window.open(resource.file_url, '_blank')}
-                  className="w-full mt-6 rounded-2xl py-6 flex items-center justify-center gap-2"
+                  onClick={() => downloadResource(resource)}
+                  className="w-full mt-6 rounded-2xl py-6"
                 >
-                  <Download className="w-5 h-5" />
+                  <Download className="w-5 h-5 mr-2" />
                   다운로드 하기
                 </Button>
               </div>
@@ -233,22 +240,28 @@ export default function ResourcesPage() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg">
             <div className="p-10">
-              <div className="flex justify-between mb-8">
-                <h2 className="text-3xl font-bold">새 자료 업로드</h2>
-                <button onClick={() => setShowForm(false)}><X className="w-7 h-7 text-gray-400" /></button>
+              <div className="flex justify-between items-center mb-8">
+                <h2 className="text-3xl font-bold">자료 업로드</h2>
+                <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-6 h-6" />
+                </button>
               </div>
 
+              {/* Drag & Drop 영역 */}
               <div
-                className={`border-2 border-dashed rounded-3xl p-12 text-center mb-8 transition-all ${
-                  isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+                className={`border-2 border-dashed rounded-3xl p-12 text-center mb-8 transition-colors ${
+                  isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
                 }`}
                 onDrop={handleDrop}
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                onDragLeave={() => setIsDragging(false)}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Upload className="w-12 h-12 mx-auto text-gray-400" />
-                <p className="mt-4 text-lg font-medium">파일을 끌어다 놓거나 클릭하세요</p>
+                <p className="mt-4 font-medium text-lg">
+                  파일을 여기에 끌어다 놓으세요
+                </p>
+                <p className="text-sm text-gray-500 mt-2">또는 클릭하여 파일 선택</p>
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -257,10 +270,13 @@ export default function ResourcesPage() {
                 />
               </div>
 
-              {formData.file && (
-                <div className="bg-gray-50 p-4 rounded-2xl mb-6">
-                  <p className="font-medium">{formData.file.name}</p>
-                  <p className="text-sm text-gray-500">{(formData.file.size / 1024 / 1024).toFixed(1)} MB</p>
+              {formData.fileName && (
+                <div className="bg-gray-50 p-4 rounded-2xl mb-6 flex items-center gap-3">
+                  <File className="w-8 h-8 text-gray-500" />
+                  <div className="text-sm">
+                    <p className="font-medium">{formData.fileName}</p>
+                    <p className="text-gray-500">{formData.fileSize}</p>
+                  </div>
                 </div>
               )}
 
@@ -283,7 +299,9 @@ export default function ResourcesPage() {
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                     className="w-full px-5 py-4 border rounded-2xl"
                   >
-                    {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    {categories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -292,8 +310,8 @@ export default function ResourcesPage() {
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="w-full h-24 px-5 py-4 border rounded-3xl"
-                    placeholder="간단한 설명을 적어주세요"
+                    className="w-full h-24 px-5 py-4 border rounded-3xl resize-y"
+                    placeholder="자료에 대한 간단한 설명을 적어주세요"
                   />
                 </div>
               </div>
@@ -303,16 +321,14 @@ export default function ResourcesPage() {
                   variant="outline" 
                   className="flex-1 py-7 rounded-2xl"
                   onClick={() => setShowForm(false)}
-                  disabled={uploading}
                 >
                   취소
                 </Button>
                 <Button 
-                  onClick={uploadResource}
+                  onClick={addResource}
                   className="flex-1 py-7 rounded-2xl"
-                  disabled={uploading}
                 >
-                  {uploading ? '업로드 중...' : '업로드 하기'}
+                  업로드 하기
                 </Button>
               </div>
             </div>
