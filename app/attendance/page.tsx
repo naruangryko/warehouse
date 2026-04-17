@@ -1,5 +1,4 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Trash2, Download, CheckCircle, XCircle } from 'lucide-react';
@@ -7,12 +6,12 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import type { Member } from '@/types';
 
-
 export default function AttendancePage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [newStudentId, setNewStudentId] = useState('');
   const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(true);
+  
   const date = "2025-04-05";
 
   useEffect(() => {
@@ -28,14 +27,13 @@ export default function AttendancePage() {
 
     if (error) {
       console.error('Error fetching members:', error);
-      // 처음 사용하는 경우 초기 데이터 넣기
       initializeDefaultMembers();
     } else if (data) {
       setMembers(data.map(m => ({
         id: m.id,
         studentId: m.student_id,
         name: m.name,
-        status: m.status || 'unknown'
+        status: (m.status as 'present' | 'absent' | 'unknown') || 'unknown'
       })));
     }
     setLoading(false);
@@ -75,7 +73,6 @@ export default function AttendancePage() {
 
   const deleteMember = async (id: number) => {
     if (!confirm("정말 삭제하시겠습니까?")) return;
-    
     const { error } = await supabase.from('members').delete().eq('id', id);
     if (error) alert('삭제 실패');
     else fetchMembers();
@@ -86,50 +83,53 @@ export default function AttendancePage() {
       .from('members')
       .update({ status })
       .eq('id', id);
-
     if (error) alert('상태 변경 실패');
     else fetchMembers();
   };
 
+  // 초기화 함수
+  const resetAll = async () => {
+    if (!confirm('모든 출석 상태를 미입력으로 초기화하시겠습니까?')) return;
+
+    const resetMembers: Member[] = members.map(member => ({
+      ...member,
+      status: 'unknown'
+    }));
+
+    setMembers(resetMembers);
+
+    const { error } = await supabase
+      .from('members')
+      .upsert(
+        resetMembers.map(member => ({
+          id: member.id,
+          student_id: member.studentId,
+          name: member.name,
+          status: member.status,
+        }))
+      );
+
+    if (error) {
+      console.error('Error resetting attendance:', error);
+      alert('초기화 중 오류가 발생했습니다.');
+    } else {
+      alert('모든 출석 상태가 초기화되었습니다.');
+    }
+  };
+
   const presentCount = members.filter(m => m.status === 'present').length;
-  const attendanceRate = members.length > 0 
-    ? Math.round((presentCount / members.length) * 100) 
+  const attendanceRate = members.length > 0
+    ? Math.round((presentCount / members.length) * 100)
     : 0;
 
   const downloadExcel = () => {
     let csvContent = "학번,이름,출석여부\n";
     members.forEach(member => {
-      const statusText = member.status === 'present' ? '출석' : 
+      const statusText = member.status === 'present' ? '출석' :
                         member.status === 'absent' ? '결석' : '미입력';
       csvContent += `${member.studentId},${member.name},${statusText}\n`;
     });
-const saveToSupabase = async (updatedMembers: Member[]) => {
-  const { error } = await supabase
-    .from('attendance')
-    .upsert(
-      updatedMembers.map(member => ({
-        student_id: member.studentId,
-        name: member.name,
-        status: member.status,
-      }))
-    );
 
-  if (error) {
-    console.error('Error saving attendance:', error);
-    alert('저장 중 오류가 발생했습니다.');
-  } else {
-    alert('출석 상태가 초기화되었습니다.');
-  }
-};
-const resetAll = () => {
-  const resetMembers: Member[] = members.map(member => ({
-    ...member,
-    status: 'unknown' as const
-  }));
-  
-  setMembers(resetMembers);
-  saveToSupabase(resetMembers);
-};
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -152,10 +152,16 @@ const resetAll = () => {
               <p className="text-gray-500">{date} • 총 {members.length}명</p>
             </div>
           </div>
-          <Button onClick={downloadExcel} className="flex items-center gap-2">
-            <Download className="w-5 h-5" />
-            엑셀 다운로드
-          </Button>
+          <div className="flex gap-3">
+            <Button onClick={resetAll} variant="outline" className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5" />
+              전체 초기화
+            </Button>
+            <Button onClick={downloadExcel} className="flex items-center gap-2">
+              <Download className="w-5 h-5" />
+              엑셀 다운로드
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -202,7 +208,6 @@ const resetAll = () => {
             <div key={member.id} className="grid grid-cols-12 px-8 py-6 border-b last:border-none items-center hover:bg-gray-50 group">
               <div className="col-span-2 font-mono text-gray-600">{member.studentId}</div>
               <div className="col-span-4 font-semibold">{member.name}</div>
-              
               <div className="col-span-5 flex justify-center gap-6">
                 <button
                   onClick={() => updateStatus(member.id, 'present')}
@@ -213,7 +218,6 @@ const resetAll = () => {
                   <CheckCircle className="w-6 h-6" />
                   출석
                 </button>
-
                 <button
                   onClick={() => updateStatus(member.id, 'absent')}
                   className={`flex items-center gap-3 px-8 py-3 rounded-2xl transition-all ${
@@ -224,7 +228,6 @@ const resetAll = () => {
                   결석
                 </button>
               </div>
-
               <div className="col-span-1 flex justify-end">
                 <button
                   onClick={() => deleteMember(member.id)}
