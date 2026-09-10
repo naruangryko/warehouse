@@ -71,14 +71,18 @@ jobs:
               options.release = 17
               options.encoding = 'UTF-8'
           }
+          tasks.register('resolveAllFiles') {
+              doLast {
+                  ['compileClasspath','clientCompileClasspath','runtimeClasspath','clientRuntimeClasspath'].each { name ->
+                      println "Resolving ${name}"
+                      configurations.getByName(name).files.each { println it }
+                  }
+              }
+          }
           EOF
-      - name: Force-resolve all build classpaths
+      - name: Download every classpath artifact
         working-directory: prep
-        run: |
-          gradle --no-daemon dependencies --configuration compileClasspath
-          gradle --no-daemon dependencies --configuration clientCompileClasspath
-          gradle --no-daemon dependencies --configuration runtimeClasspath
-          gradle --no-daemon dependencies --configuration clientRuntimeClasspath
+        run: gradle --no-daemon resolveAllFiles --stacktrace
       - name: Bundle dependency cache
         run: |
           tar -czf crown-gradle-cache.tar.gz -C "$HOME/.gradle" caches
@@ -86,7 +90,7 @@ jobs:
       - name: Upload dependency cache
         uses: actions/upload-artifact@v4
         with:
-          name: crown-gradle-cache-full
+          name: crown-gradle-cache-artifacts
           path: crown-gradle-cache.tar.gz
           compression-level: 0
           if-no-files-found: error
