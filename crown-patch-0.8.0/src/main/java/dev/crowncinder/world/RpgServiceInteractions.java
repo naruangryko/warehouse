@@ -1,0 +1,33 @@
+package dev.crowncinder.world;
+
+import dev.crowncinder.progress.Progress;
+import dev.crowncinder.progress.ProgressService;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
+import net.minecraft.item.ItemStack;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.ActionResult;
+
+public final class RpgServiceInteractions {
+    private RpgServiceInteractions(){}
+    public static void init(){
+        UseEntityCallback.EVENT.register((player,world,hand,entity,hit)->{
+            if(world.isClient || !(player instanceof ServerPlayerEntity sp))return ActionResult.PASS;
+            if(entity.getCommandTags().contains("crown_service_inn") || entity.getCommandTags().contains("crown_role_innkeeper"))return rest(sp);
+            if(entity.getCommandTags().contains("crown_service_smith") || entity.getCommandTags().contains("crown_role_blacksmith"))return repair(sp);
+            return ActionResult.PASS;
+        });
+    }
+    private static ActionResult rest(ServerPlayerEntity sp){
+        Progress p=ProgressService.get(sp); long cost=35;
+        if(!p.spendMoney(cost)){sp.sendMessage(Text.literal("§d[여관주인] §f숙박비 35동이 필요합니다."),false);return ActionResult.SUCCESS;}
+        sp.setHealth(sp.getMaxHealth()); sp.getHungerManager().setFoodLevel(20); sp.getHungerManager().setSaturationLevel(5.0f); ProgressService.store(sp).markDirty();
+        sp.sendMessage(Text.literal("§d[여관주인] §f휴식 완료! 체력과 허기가 회복되었습니다. (-35동)"),false);return ActionResult.SUCCESS;
+    }
+    private static ActionResult repair(ServerPlayerEntity sp){
+        Progress p=ProgressService.get(sp); ItemStack held=sp.getMainHandStack();
+        if(held.isEmpty()||!held.isDamageable()){sp.sendMessage(Text.literal("§7[대장장이] §f수리할 장비를 주 손에 들어주세요."),false);return ActionResult.SUCCESS;}
+        long cost=Math.max(20,held.getDamage()/3); if(!p.spendMoney(cost)){sp.sendMessage(Text.literal("§7[대장장이] §f수리비 "+cost+"동이 필요합니다."),false);return ActionResult.SUCCESS;}
+        held.setDamage(0); ProgressService.store(sp).markDirty(); sp.sendMessage(Text.literal("§7[대장장이] §f수리 완료! (-"+cost+"동)"),false);return ActionResult.SUCCESS;
+    }
+}
