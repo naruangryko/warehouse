@@ -1,4 +1,4 @@
-name: Build Crown and Cinder 0.2.0
+name: Build Crown and Cinder 0.3.0
 on:
   push:
     branches: [crown-cinder-build-20260910]
@@ -17,38 +17,35 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Reconstruct verified 0.1.0 source
+      - name: Reconstruct verified base source
         run: |
           cat crown-source-chunks/part00-fixed.txt crown-source-chunks/part01.txt crown-source-chunks/part02.txt crown-source-chunks/part03.txt | base64 -d > crown-source.zip
           echo '06d2ed423a04feea12a103e968025de344f574d953cab0ac62900d209def39d9  crown-source.zip' | sha256sum -c -
           rm -rf build-work
           mkdir build-work
           unzip -q crown-source.zip -d build-work
-      - name: Apply 0.2.0 RPG core patch
+      - name: Apply 0.3.0 RPG expansion patch
         run: |
-          cp crown-patch-0.2.0/Progress.java build-work/crown-and-cinder/src/main/java/dev/crowncinder/progress/Progress.java
-          cp crown-patch-0.2.0/ProgressService.java build-work/crown-and-cinder/src/main/java/dev/crowncinder/progress/ProgressService.java
-          cp crown-patch-0.2.0/ProgressStore.java build-work/crown-and-cinder/src/main/java/dev/crowncinder/progress/ProgressStore.java
-          cp crown-patch-0.2.0/RpgCommands.java build-work/crown-and-cinder/src/main/java/dev/crowncinder/quest/RpgCommands.java
-          cp crown-patch-0.2.0/CrownCinder.java build-work/crown-and-cinder/src/main/java/dev/crowncinder/CrownCinder.java
-          cp crown-patch-0.2.0/gradle.properties build-work/crown-and-cinder/gradle.properties
-      - name: Build Fabric mod
+          base64 -d crown-patch-0.3.0.zip.b64 > crown-patch-0.3.0.zip
+          unzip -oq crown-patch-0.3.0.zip -d build-work/crown-and-cinder
+          grep -q 'mod_version=0.3.0' build-work/crown-and-cinder/gradle.properties
+      - name: Run core tests and build Fabric mod
         working-directory: build-work/crown-and-cinder
-        run: gradle --no-daemon clean remapJar --stacktrace
+        run: gradle --no-daemon clean test coreTest remapJar --stacktrace
       - name: Verify install JAR
         working-directory: build-work/crown-and-cinder
         run: |
-          test -f build/libs/crown-and-cinder-0.2.0.jar
-          jar tf build/libs/crown-and-cinder-0.2.0.jar | grep -q '^fabric.mod.json$'
-          jar tf build/libs/crown-and-cinder-0.2.0.jar | grep -q 'dev/crowncinder/progress/Progress.class'
-          jar tf build/libs/crown-and-cinder-0.2.0.jar | grep -q 'dev/crowncinder/quest/RpgCommands.class'
-          unzip -p build/libs/crown-and-cinder-0.2.0.jar fabric.mod.json | grep -q '0.2.0'
+          test -f build/libs/crown-and-cinder-0.3.0.jar
+          jar tf build/libs/crown-and-cinder-0.3.0.jar | grep -q '^fabric.mod.json$'
+          jar tf build/libs/crown-and-cinder-0.3.0.jar | grep -q 'dev/crowncinder/progress/Progress.class'
+          jar tf build/libs/crown-and-cinder-0.3.0.jar | grep -q 'dev/crowncinder/quest/RpgCommands.class'
+          unzip -p build/libs/crown-and-cinder-0.3.0.jar fabric.mod.json | grep -q '0.3.0'
       - name: Stage install JAR
         run: |
           mkdir -p artifact
-          cp build-work/crown-and-cinder/build/libs/crown-and-cinder-0.2.0.jar artifact/crown-and-cinder-0.2.0-fabric-1.20.1.jar
+          cp build-work/crown-and-cinder/build/libs/crown-and-cinder-0.3.0.jar artifact/crown-and-cinder-0.3.0-fabric-1.20.1.jar
       - name: Upload install JAR
         uses: actions/upload-artifact@v4
         with:
-          name: crown-and-cinder-0.2.0-fabric-1.20.1
-          path: artifact/crown-and-cinder-0.2.0-fabric-1.20.1.jar
+          name: crown-and-cinder-0.3.0-fabric-1.20.1
+          path: artifact/crown-and-cinder-0.3.0-fabric-1.20.1.jar
