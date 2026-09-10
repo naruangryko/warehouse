@@ -1,4 +1,4 @@
-name: Prepare Crown and Cinder Offline Build
+name: Build Crown and Cinder Fabric JAR
 
 on:
   push:
@@ -6,91 +6,56 @@ on:
   workflow_dispatch:
 
 jobs:
-  prepare:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Create dependency-prep project
+
+      - name: Reconstruct and verify original source ZIP
         run: |
-          rm -rf prep
-          mkdir -p prep/src/main/java prep/src/client/java prep/src/main/resources
-          cat > prep/settings.gradle <<'EOF'
-          pluginManagement {
-              repositories {
-                  maven { url = 'https://maven.fabricmc.net/' }
-                  gradlePluginPortal()
-                  mavenCentral()
-              }
-          }
-          rootProject.name = 'crown-and-cinder'
-          EOF
-          cat > prep/gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx2G
-          org.gradle.parallel=false
-          minecraft_version=1.20.1
-          yarn_mappings=1.20.1+build.10
-          loader_version=0.15.11
-          fabric_version=0.92.2+1.20.1
-          mod_version=0.1.0
-          maven_group=dev.crowncinder
-          EOF
-          cat > prep/build.gradle <<'EOF'
-          plugins {
-              id 'fabric-loom' version '1.6.12'
-              id 'maven-publish'
-          }
-          version = project.mod_version
-          group = project.maven_group
-          base { archivesName = 'crown-and-cinder' }
-          repositories { mavenCentral() }
-          dependencies {
-              minecraft "com.mojang:minecraft:${project.minecraft_version}"
-              mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-              modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-              modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-          }
-          loom {
-              splitEnvironmentSourceSets()
-              mods {
-                  crowncinder {
-                      sourceSet sourceSets.main
-                      sourceSet sourceSets.client
-                  }
-              }
-          }
-          tasks.withType(JavaCompile).configureEach {
-              options.release = 17
-              options.encoding = 'UTF-8'
-          }
-          tasks.register('resolveAllFiles') {
-              doLast {
-                  ['compileClasspath','clientCompileClasspath','runtimeClasspath','clientRuntimeClasspath'].each { name ->
-                      println "Resolving ${name}"
-                      configurations.getByName(name).files.each { println it }
-                  }
-              }
-          }
-          EOF
-      - name: Download every classpath artifact
-        working-directory: prep
-        run: gradle --no-daemon resolveAllFiles --stacktrace
-      - name: Bundle dependency cache
+          cat crown-source-chunks/part00-fixed.txt \
+              crown-source-chunks/part01.txt \
+              crown-source-chunks/part02.txt \
+              crown-source-chunks/part03.txt | base64 -d > crown-source.zip
+          echo "06d2ed423a04feea12a103e968025de344f574d953cab0ac62900d209def39d9  crown-source.zip" | sha256sum -c -
+          unzip -t crown-source.zip
+          rm -rf crown-build
+          mkdir crown-build
+          unzip -q crown-source.zip -d crown-build
+
+      - name: Build Fabric mod
+        working-directory: crown-build/crown-and-cinder
+        run: gradle --no-daemon clean build --stacktrace
+
+      - name: Verify install JAR
+        working-directory: crown-build/crown-and-cinder
         run: |
-          tar -czf crown-gradle-cache.tar.gz -C "$HOME/.gradle" caches
-          ls -lh crown-gradle-cache.tar.gz
-      - name: Upload dependency cache
+          ls -lh build/libs
+          JAR=$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' | head -1)
+          test -n "$JAR"
+          jar tf "$JAR" | grep -q '^fabric.mod.json$'
+          echo "INSTALL_JAR=$JAR" >> "$GITHUB_ENV"
+
+      - name: Stage install JAR
+        run: |
+          cp "crown-build/crown-and-cinder/${INSTALL_JAR}" crown-and-cinder-0.1.0-fabric-1.20.1.jar
+          sha256sum crown-and-cinder-0.1.0-fabric-1.20.1.jar
+
+      - name: Upload install JAR
         uses: actions/upload-artifact@v4
         with:
-          name: crown-gradle-cache-artifacts
-          path: crown-gradle-cache.tar.gz
+          name: crown-and-cinder-0.1.0-fabric-1.20.1
+          path: crown-and-cinder-0.1.0-fabric-1.20.1.jar
           compression-level: 0
           if-no-files-found: error
