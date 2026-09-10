@@ -1,0 +1,1 @@
+0.8.0 binary patch is staged through git blob/tree for reliable texture transfer.
