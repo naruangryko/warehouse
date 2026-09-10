@@ -1,0 +1,37 @@
+name: Build Crown and Cinder
+
+on:
+  push:
+    branches: [ crown-cinder-build-20260910 ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Unpack mod source
+        run: |
+          rm -rf crown-cinder-work
+          mkdir crown-cinder-work
+          unzip -q crown-and-cinder-0.1.0-source.zip -d crown-cinder-work
+      - name: Build mod
+        working-directory: crown-cinder-work/crown-and-cinder
+        run: gradle --no-daemon build --stacktrace
+      - name: Upload install JAR
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crown-and-cinder-0.1.0-fabric-1.20.1
+          path: |
+            crown-cinder-work/crown-and-cinder/build/libs/crown-and-cinder-0.1.0.jar
+          if-no-files-found: error
