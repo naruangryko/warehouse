@@ -1,0 +1,38 @@
+package dev.crowncinder.entity;
+
+import dev.crowncinder.CrownCinder;
+import net.fabricmc.fabric.api.biome.v1.BiomeModifications;
+import net.fabricmc.fabric.api.biome.v1.BiomeSelectors;
+import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
+import net.fabricmc.fabric.api.object.builder.v1.entity.FabricEntityTypeBuilder;
+import net.minecraft.entity.*;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.mob.HostileEntity;
+import net.minecraft.entity.mob.ZombieEntity;
+import net.minecraft.registry.Registries;
+import net.minecraft.registry.Registry;
+import net.minecraft.world.Heightmap;
+import net.minecraft.world.biome.BiomeKeys;
+
+public final class ModEntities {
+    private static <T extends ZombieEntity> EntityType<T> type(String id, EntityType.EntityFactory<T> factory, float width, float height){
+        return Registry.register(Registries.ENTITY_TYPE, CrownCinder.id(id), FabricEntityTypeBuilder.create(SpawnGroup.MONSTER,factory).dimensions(EntityDimensions.fixed(width,height)).trackRangeBlocks(64).build());
+    }
+    public static final EntityType<GoblinEntity> GOBLIN=type("goblin",GoblinEntity::new,0.6f,1.95f);
+    public static final EntityType<OrcEntity> ORC=type("orc",OrcEntity::new,0.7f,2.05f);
+    public static final EntityType<TrollEntity> TROLL=type("troll",TrollEntity::new,0.9f,2.35f);
+    public static final EntityType<WerewolfEntity> WEREWOLF=type("werewolf",WerewolfEntity::new,0.65f,2.0f);
+    public static void init(){
+        FabricDefaultAttributeRegistry.register(GOBLIN,attrs(CrownCinder.CONFIG.goblinHealth,CrownCinder.CONFIG.goblinDamage,CrownCinder.CONFIG.goblinSpeed,24));
+        FabricDefaultAttributeRegistry.register(ORC,attrs(34,7,0.24,28));
+        FabricDefaultAttributeRegistry.register(TROLL,attrs(70,11,0.18,30).add(EntityAttributes.GENERIC_ARMOR,5));
+        FabricDefaultAttributeRegistry.register(WEREWOLF,attrs(42,8,0.34,32));
+        restriction(GOBLIN);restriction(ORC);restriction(TROLL);restriction(WEREWOLF);
+        if(CrownCinder.CONFIG.goblinSpawnWeight>0)BiomeModifications.addSpawn(BiomeSelectors.includeByKey(BiomeKeys.PLAINS,BiomeKeys.FOREST,BiomeKeys.TAIGA),SpawnGroup.MONSTER,GOBLIN,CrownCinder.CONFIG.goblinSpawnWeight,1,3);
+        BiomeModifications.addSpawn(BiomeSelectors.includeByKey(BiomeKeys.PLAINS,BiomeKeys.FOREST),SpawnGroup.MONSTER,ORC,18,1,2);
+        BiomeModifications.addSpawn(BiomeSelectors.includeByKey(BiomeKeys.TAIGA,BiomeKeys.OLD_GROWTH_PINE_TAIGA),SpawnGroup.MONSTER,TROLL,7,1,1);
+        BiomeModifications.addSpawn(BiomeSelectors.includeByKey(BiomeKeys.FOREST,BiomeKeys.DARK_FOREST,BiomeKeys.TAIGA),SpawnGroup.MONSTER,WEREWOLF,10,1,2);
+    }
+    private static net.minecraft.entity.attribute.DefaultAttributeContainer.Builder attrs(double hp,double dmg,double speed,double follow){return ZombieEntity.createZombieAttributes().add(EntityAttributes.GENERIC_MAX_HEALTH,hp).add(EntityAttributes.GENERIC_ATTACK_DAMAGE,dmg).add(EntityAttributes.GENERIC_MOVEMENT_SPEED,speed).add(EntityAttributes.GENERIC_FOLLOW_RANGE,follow).add(EntityAttributes.ZOMBIE_SPAWN_REINFORCEMENTS,0);}
+    private static <T extends HostileEntity> void restriction(EntityType<T> type){SpawnRestriction.register(type,SpawnRestriction.Location.ON_GROUND,Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,HostileEntity::canSpawnInDark);}
+}
