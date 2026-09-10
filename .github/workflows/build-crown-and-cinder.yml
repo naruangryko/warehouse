@@ -1,4 +1,4 @@
-name: Build Crown and Cinder 0.3.0
+name: Build Crown and Cinder 0.4.0
 on:
   push:
     branches: [crown-cinder-build-20260910]
@@ -24,30 +24,34 @@ jobs:
           rm -rf build-work
           mkdir build-work
           unzip -q crown-source.zip -d build-work
-      - name: Apply 0.3.0 RPG expansion patch
+      - name: Apply 0.3.0 base expansion
         run: |
           base64 -d crown-patch-0.3.0.zip.b64 > crown-patch-0.3.0.zip
           unzip -oq crown-patch-0.3.0.zip -d build-work/crown-and-cinder
           cp crown-patch-0.2.0/ProgressService.java build-work/crown-and-cinder/src/main/java/dev/crowncinder/progress/ProgressService.java
-          grep -q 'mod_version=0.3.0' build-work/crown-and-cinder/gradle.properties
+      - name: Apply 0.4.0 physical economy patch
+        run: |
+          base64 -d crown-patch-0.4.0.zip.b64 > crown-patch-0.4.0.zip
+          unzip -oq crown-patch-0.4.0.zip -d build-work/crown-and-cinder
+          grep -q 'mod_version=0.4.0' build-work/crown-and-cinder/gradle.properties
       - name: Run core tests and build Fabric mod
         working-directory: build-work/crown-and-cinder
         run: gradle --no-daemon clean test coreTest remapJar --stacktrace
       - name: Verify install JAR
         working-directory: build-work/crown-and-cinder
         run: |
-          test -f build/libs/crown-and-cinder-0.3.0.jar
-          jar tf build/libs/crown-and-cinder-0.3.0.jar | grep -q '^fabric.mod.json$'
-          jar tf build/libs/crown-and-cinder-0.3.0.jar | grep -q 'dev/crowncinder/progress/Progress.class'
-          jar tf build/libs/crown-and-cinder-0.3.0.jar | grep -q 'dev/crowncinder/progress/ProgressService.class'
-          jar tf build/libs/crown-and-cinder-0.3.0.jar | grep -q 'dev/crowncinder/quest/RpgCommands.class'
-          unzip -p build/libs/crown-and-cinder-0.3.0.jar fabric.mod.json | grep -q '0.3.0'
+          test -f build/libs/crown-and-cinder-0.4.0.jar
+          jar tf build/libs/crown-and-cinder-0.4.0.jar | grep -q '^fabric.mod.json$'
+          jar tf build/libs/crown-and-cinder-0.4.0.jar | grep -q 'dev/crowncinder/item/CoinItem.class'
+          jar tf build/libs/crown-and-cinder-0.4.0.jar | grep -q 'dev/crowncinder/item/GuildLedgerItem.class'
+          jar tf build/libs/crown-and-cinder-0.4.0.jar | grep -q 'assets/crowncinder/textures/item/gold_coin.png'
+          unzip -p build/libs/crown-and-cinder-0.4.0.jar fabric.mod.json | grep -q '0.4.0'
       - name: Stage install JAR
         run: |
           mkdir -p artifact
-          cp build-work/crown-and-cinder/build/libs/crown-and-cinder-0.3.0.jar artifact/crown-and-cinder-0.3.0-fabric-1.20.1.jar
+          cp build-work/crown-and-cinder/build/libs/crown-and-cinder-0.4.0.jar artifact/crown-and-cinder-0.4.0-fabric-1.20.1.jar
       - name: Upload install JAR
         uses: actions/upload-artifact@v4
         with:
-          name: crown-and-cinder-0.3.0-fabric-1.20.1
-          path: artifact/crown-and-cinder-0.3.0-fabric-1.20.1.jar
+          name: crown-and-cinder-0.4.0-fabric-1.20.1
+          path: artifact/crown-and-cinder-0.4.0-fabric-1.20.1.jar
