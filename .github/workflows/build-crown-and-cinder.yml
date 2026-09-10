@@ -1,4 +1,4 @@
-name: Build Crown and Cinder
+name: Prepare Crown and Cinder Offline Build
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  prepare:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,19 +19,75 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Unpack mod source
+      - name: Create dependency-prep project
         run: |
-          rm -rf crown-cinder-work
-          mkdir crown-cinder-work
-          unzip -q crown-and-cinder-0.1.0-source.zip -d crown-cinder-work
-      - name: Build mod
-        working-directory: crown-cinder-work/crown-and-cinder
-        run: gradle --no-daemon build --stacktrace
-      - name: Upload install JAR
-        if: success()
+          rm -rf prep
+          mkdir -p prep/src/main/java prep/src/client/java prep/src/main/resources
+          cat > prep/settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  maven { url = 'https://maven.fabricmc.net/' }
+                  gradlePluginPortal()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = 'crown-and-cinder'
+          EOF
+          cat > prep/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2G
+          org.gradle.parallel=false
+          minecraft_version=1.20.1
+          yarn_mappings=1.20.1+build.10
+          loader_version=0.15.11
+          fabric_version=0.92.2+1.20.1
+          mod_version=0.1.0
+          maven_group=dev.crowncinder
+          EOF
+          cat > prep/build.gradle <<'EOF'
+          plugins {
+              id 'fabric-loom' version '1.6.12'
+              id 'maven-publish'
+          }
+          version = project.mod_version
+          group = project.maven_group
+          base { archivesName = 'crown-and-cinder' }
+          repositories { mavenCentral() }
+          dependencies {
+              minecraft "com.mojang:minecraft:${project.minecraft_version}"
+              mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+              modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+              modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+          }
+          loom {
+              splitEnvironmentSourceSets()
+              mods {
+                  crowncinder {
+                      sourceSet sourceSets.main
+                      sourceSet sourceSets.client
+                  }
+              }
+          }
+          tasks.withType(JavaCompile).configureEach {
+              options.release = 17
+              options.encoding = 'UTF-8'
+          }
+          EOF
+      - name: Resolve Fabric and Minecraft dependencies
+        working-directory: prep
+        run: gradle --no-daemon compileJava compileClientJava --stacktrace
+      - name: Bundle Gradle and dependency cache
+        run: |
+          mkdir -p offline-bundle
+          cp -a "$HOME/.gradle" offline-bundle/gradle-home
+          GRADLE_BIN="$(readlink -f "$(command -v gradle)")"
+          GRADLE_ROOT="$(cd "$(dirname "$GRADLE_BIN")/.." && pwd)"
+          cp -a "$GRADLE_ROOT" offline-bundle/gradle-8.7
+          tar -czf crown-gradle-offline.tar.gz offline-bundle
+          ls -lh crown-gradle-offline.tar.gz
+      - name: Upload offline bundle
         uses: actions/upload-artifact@v4
         with:
-          name: crown-and-cinder-0.1.0-fabric-1.20.1
-          path: |
-            crown-cinder-work/crown-and-cinder/build/libs/crown-and-cinder-0.1.0.jar
+          name: crown-gradle-offline
+          path: crown-gradle-offline.tar.gz
+          compression-level: 0
           if-no-files-found: error
