@@ -72,22 +72,21 @@ jobs:
               options.encoding = 'UTF-8'
           }
           EOF
-      - name: Resolve Fabric and Minecraft dependencies
+      - name: Force-resolve all build classpaths
         working-directory: prep
-        run: gradle --no-daemon compileJava compileClientJava --stacktrace
-      - name: Bundle Gradle and dependency cache
         run: |
-          mkdir -p offline-bundle
-          cp -a "$HOME/.gradle" offline-bundle/gradle-home
-          GRADLE_BIN="$(readlink -f "$(command -v gradle)")"
-          GRADLE_ROOT="$(cd "$(dirname "$GRADLE_BIN")/.." && pwd)"
-          cp -a "$GRADLE_ROOT" offline-bundle/gradle-8.7
-          tar -czf crown-gradle-offline.tar.gz offline-bundle
-          ls -lh crown-gradle-offline.tar.gz
-      - name: Upload offline bundle
+          gradle --no-daemon dependencies --configuration compileClasspath
+          gradle --no-daemon dependencies --configuration clientCompileClasspath
+          gradle --no-daemon dependencies --configuration runtimeClasspath
+          gradle --no-daemon dependencies --configuration clientRuntimeClasspath
+      - name: Bundle dependency cache
+        run: |
+          tar -czf crown-gradle-cache.tar.gz -C "$HOME/.gradle" caches
+          ls -lh crown-gradle-cache.tar.gz
+      - name: Upload dependency cache
         uses: actions/upload-artifact@v4
         with:
-          name: crown-gradle-offline
-          path: crown-gradle-offline.tar.gz
+          name: crown-gradle-cache-full
+          path: crown-gradle-cache.tar.gz
           compression-level: 0
           if-no-files-found: error
