@@ -28,6 +28,7 @@ jobs:
         run: |
           base64 -d crown-patch-0.3.0.zip.b64 > crown-patch-0.3.0.zip
           unzip -oq crown-patch-0.3.0.zip -d build-work/crown-and-cinder
+          cp crown-patch-0.2.0/ProgressService.java build-work/crown-and-cinder/src/main/java/dev/crowncinder/progress/ProgressService.java
           grep -q 'mod_version=0.3.0' build-work/crown-and-cinder/gradle.properties
       - name: Run core tests and build Fabric mod
         working-directory: build-work/crown-and-cinder
@@ -38,6 +39,7 @@ jobs:
           test -f build/libs/crown-and-cinder-0.3.0.jar
           jar tf build/libs/crown-and-cinder-0.3.0.jar | grep -q '^fabric.mod.json$'
           jar tf build/libs/crown-and-cinder-0.3.0.jar | grep -q 'dev/crowncinder/progress/Progress.class'
+          jar tf build/libs/crown-and-cinder-0.3.0.jar | grep -q 'dev/crowncinder/progress/ProgressService.class'
           jar tf build/libs/crown-and-cinder-0.3.0.jar | grep -q 'dev/crowncinder/quest/RpgCommands.class'
           unzip -p build/libs/crown-and-cinder-0.3.0.jar fabric.mod.json | grep -q '0.3.0'
       - name: Stage install JAR
