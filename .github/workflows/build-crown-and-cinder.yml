@@ -1,4 +1,4 @@
-name: Build Crown and Cinder 0.5.0
+name: Build Crown and Cinder 0.6.0
 on:
   push:
     branches: [crown-cinder-build-20260910]
@@ -37,25 +37,32 @@ jobs:
         run: |
           base64 -d crown-patch-0.5.0.zip.b64 > crown-patch-0.5.0.zip
           unzip -oq crown-patch-0.5.0.zip -d build-work/crown-and-cinder
-          grep -q 'mod_version=0.5.0' build-work/crown-and-cinder/gradle.properties
+      - name: Apply 0.6.0 combat dungeon patch
+        run: |
+          tr -d '[:space:]' < crown-patch-0.6.0.zip.b64 | base64 -d > crown-patch-0.6.0.zip
+          unzip -oq crown-patch-0.6.0.zip -d build-work/crown-and-cinder
+          grep -q 'mod_version=0.6.0' build-work/crown-and-cinder/gradle.properties
       - name: Run core tests and build Fabric mod
         working-directory: build-work/crown-and-cinder
         run: gradle --no-daemon clean test coreTest remapJar --stacktrace
       - name: Verify install JAR
         working-directory: build-work/crown-and-cinder
         run: |
-          test -f build/libs/crown-and-cinder-0.5.0.jar
-          jar tf build/libs/crown-and-cinder-0.5.0.jar | grep -q '^fabric.mod.json$'
-          jar tf build/libs/crown-and-cinder-0.5.0.jar | grep -q 'dev/crowncinder/world/RpgOutpost.class'
-          jar tf build/libs/crown-and-cinder-0.5.0.jar | grep -q 'dev/crowncinder/world/RpgNpcInteractions.class'
-          jar tf build/libs/crown-and-cinder-0.5.0.jar | grep -q 'dev/crowncinder/item/CoinItem.class'
-          unzip -p build/libs/crown-and-cinder-0.5.0.jar fabric.mod.json | grep -q '0.5.0'
+          test -f build/libs/crown-and-cinder-0.6.0.jar
+          jar tf build/libs/crown-and-cinder-0.6.0.jar | grep -q '^fabric.mod.json$'
+          jar tf build/libs/crown-and-cinder-0.6.0.jar | grep -q 'dev/crowncinder/entity/OrcEntity.class'
+          jar tf build/libs/crown-and-cinder-0.6.0.jar | grep -q 'dev/crowncinder/entity/TrollEntity.class'
+          jar tf build/libs/crown-and-cinder-0.6.0.jar | grep -q 'dev/crowncinder/entity/WerewolfEntity.class'
+          jar tf build/libs/crown-and-cinder-0.6.0.jar | grep -q 'dev/crowncinder/world/RpgDungeon.class'
+          jar tf build/libs/crown-and-cinder-0.6.0.jar | grep -q 'dev/crowncinder/world/RpgRaid.class'
+          jar tf build/libs/crown-and-cinder-0.6.0.jar | grep -q 'assets/crowncinder/textures/entity/troll.png'
+          unzip -p build/libs/crown-and-cinder-0.6.0.jar fabric.mod.json | grep -q '0.6.0'
       - name: Stage install JAR
         run: |
           mkdir -p artifact
-          cp build-work/crown-and-cinder/build/libs/crown-and-cinder-0.5.0.jar artifact/crown-and-cinder-0.5.0-fabric-1.20.1.jar
+          cp build-work/crown-and-cinder/build/libs/crown-and-cinder-0.6.0.jar artifact/crown-and-cinder-0.6.0-fabric-1.20.1.jar
       - name: Upload install JAR
         uses: actions/upload-artifact@v4
         with:
-          name: crown-and-cinder-0.5.0-fabric-1.20.1
-          path: artifact/crown-and-cinder-0.5.0-fabric-1.20.1.jar
+          name: crown-and-cinder-0.6.0-fabric-1.20.1
+          path: artifact/crown-and-cinder-0.6.0-fabric-1.20.1.jar
