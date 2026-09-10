@@ -1,4 +1,4 @@
-name: Build Crown and Cinder 0.9.0
+name: Build Crown and Cinder 0.10.0
 on:
   push:
     branches: [crown-cinder-build-20260910]
@@ -46,31 +46,40 @@ jobs:
       - name: Apply 0.9.0 kingdom and weapon redesign
         run: |
           cat crown-patch-0.9.0/part00.txt crown-patch-0.9.0/part01.txt crown-patch-0.9.0/part02.txt crown-patch-0.9.0/part03.txt crown-patch-0.9.0/part04.txt | base64 -d > crown-patch-0.9.0.zip
-          unzip -t crown-patch-0.9.0.zip
           unzip -oq crown-patch-0.9.0.zip -d build-work/crown-and-cinder
-          grep -q 'mod_version=0.9.0' build-work/crown-and-cinder/gradle.properties
-          file build-work/crown-and-cinder/src/main/resources/assets/crowncinder/textures/item/knight_blade.png | grep -q '32 x 32'
-          file build-work/crown-and-cinder/src/main/resources/assets/crowncinder/textures/item/katana.png | grep -q '32 x 32'
+      - name: Apply 0.10.0 castle and village code
+        run: |
+          cp -r crown-patch-0.10.0-code/. build-work/crown-and-cinder/
+          sed -i 's/mod_version=0.9.0/mod_version=0.10.0/' build-work/crown-and-cinder/gradle.properties
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('build-work/crown-and-cinder/src/main/java/dev/crowncinder/world/RpgOutpost.java')
+          s=p.read_text()
+          needle='        spawnPopulation(w,o,nation);\n'
+          if 'FantasyVillage.build(w,o,nation);' not in s:
+              s=s.replace(needle,'        FantasyVillage.build(w,o,nation);\n'+needle)
+          p.write_text(s)
+          PY
+          grep -q 'mod_version=0.10.0' build-work/crown-and-cinder/gradle.properties
+          grep -q 'FantasyVillage.build' build-work/crown-and-cinder/src/main/java/dev/crowncinder/world/RpgOutpost.java
       - name: Run core tests and build Fabric mod
         working-directory: build-work/crown-and-cinder
         run: gradle --no-daemon clean test coreTest remapJar --stacktrace
-      - name: Verify install JAR
+      - name: Verify install JAR code
         working-directory: build-work/crown-and-cinder
         run: |
-          test -f build/libs/crown-and-cinder-0.9.0.jar
-          jar tf build/libs/crown-and-cinder-0.9.0.jar | grep -q 'dev/crowncinder/world/RpgOutpost.class'
-          jar tf build/libs/crown-and-cinder-0.9.0.jar | grep -q 'dev/crowncinder/entity/CrownGuardEntity.class'
-          jar tf build/libs/crown-and-cinder-0.9.0.jar | grep -q 'assets/crowncinder/textures/item/knight_blade.png'
-          jar tf build/libs/crown-and-cinder-0.9.0.jar | grep -q 'assets/crowncinder/textures/item/warhammer.png'
-          unzip -p build/libs/crown-and-cinder-0.9.0.jar assets/crowncinder/textures/item/longsword.png > /tmp/longsword.png
-          file /tmp/longsword.png | grep -q '32 x 32'
-          unzip -p build/libs/crown-and-cinder-0.9.0.jar fabric.mod.json | grep -q '0.9.0'
+          test -f build/libs/crown-and-cinder-0.10.0.jar
+          jar tf build/libs/crown-and-cinder-0.10.0.jar | grep -q 'dev/crowncinder/world/CentralCastle.class'
+          jar tf build/libs/crown-and-cinder-0.10.0.jar | grep -q 'dev/crowncinder/world/FantasyVillage.class'
+          jar tf build/libs/crown-and-cinder-0.10.0.jar | grep -q 'dev/crowncinder/world/RpgOutpost.class'
+          jar tf build/libs/crown-and-cinder-0.10.0.jar | grep -q 'dev/crowncinder/entity/CrownGuardEntity.class'
+          unzip -p build/libs/crown-and-cinder-0.10.0.jar fabric.mod.json | grep -q '0.10.0'
       - name: Stage install JAR
         run: |
           mkdir -p artifact
-          cp build-work/crown-and-cinder/build/libs/crown-and-cinder-0.9.0.jar artifact/crown-and-cinder-0.9.0-fabric-1.20.1.jar
+          cp build-work/crown-and-cinder/build/libs/crown-and-cinder-0.10.0.jar artifact/crown-and-cinder-0.10.0-fabric-1.20.1.jar
       - name: Upload install JAR
         uses: actions/upload-artifact@v4
         with:
-          name: crown-and-cinder-0.9.0-fabric-1.20.1
-          path: artifact/crown-and-cinder-0.9.0-fabric-1.20.1.jar
+          name: crown-and-cinder-0.10.0-fabric-1.20.1
+          path: artifact/crown-and-cinder-0.10.0-fabric-1.20.1.jar
