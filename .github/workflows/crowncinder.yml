@@ -1,0 +1,51 @@
+name: Build and verify Crown and Cinder
+
+on:
+  push:
+    branches: ['crowncinder-build']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: crown-and-cinder
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Compile, test, and remap install JAR
+        run: gradle --no-daemon build
+      - name: Load the mod in a Minecraft test server
+        run: gradle --no-daemon runGametest
+      - name: Upload install JAR after successful checks
+        uses: actions/upload-artifact@v4
+        with:
+          name: crown-and-cinder-mc1.20.1-fabric
+          path: |
+            crown-and-cinder/build/libs/*.jar
+            !crown-and-cinder/build/libs/*-sources.jar
+            !crown-and-cinder/build/libs/*-dev.jar
+          if-no-files-found: error
+      - name: Preserve diagnostic reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crown-and-cinder-test-logs
+          path: |
+            crown-and-cinder/run-gametest/logs/
+            crown-and-cinder/run-gametest/crash-reports/
+            crown-and-cinder/build/reports/
+          if-no-files-found: ignore

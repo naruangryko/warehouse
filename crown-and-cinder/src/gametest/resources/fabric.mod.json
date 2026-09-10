@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "crowncinder_test",
+  "version": "1.0.0",
+  "name": "Crown & Cinder Integration Tests",
+  "environment": "server",
+  "entrypoints": {
+    "fabric-gametest": ["dev.crowncinder.gametest.CrownGameTests"]
+  },
+  "depends": {
+    "crowncinder": "*",
+    "fabric-api": "*"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "crowncinder",
+  "version": "${version}",
+  "name": "Crown & Cinder",
+  "description": "An original fantasy RPG prototype: blades, growth and goblin contracts.",
+  "authors": ["Crown & Cinder project"],
+  "license": "All-Rights-Reserved",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["dev.crowncinder.CrownCinder"],
+    "client": ["dev.crowncinder.client.CrownClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "minecraft": "1.20.1",
+    "java": ">=17",
+    "fabric-api": "*"
+  }
+}
