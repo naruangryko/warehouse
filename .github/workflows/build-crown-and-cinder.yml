@@ -45,7 +45,8 @@ jobs:
         run: cp -r crown-patch-0.8.0/. build-work/crown-and-cinder/
       - name: Apply 0.9.0 kingdom and weapon redesign
         run: |
-          base64 -d crown-patch-0.9.0.zip.b64 > crown-patch-0.9.0.zip
+          cat crown-patch-0.9.0/part00.txt crown-patch-0.9.0/part01.txt crown-patch-0.9.0/part02.txt crown-patch-0.9.0/part03.txt crown-patch-0.9.0/part04.txt | base64 -d > crown-patch-0.9.0.zip
+          unzip -t crown-patch-0.9.0.zip
           unzip -oq crown-patch-0.9.0.zip -d build-work/crown-and-cinder
           grep -q 'mod_version=0.9.0' build-work/crown-and-cinder/gradle.properties
           file build-work/crown-and-cinder/src/main/resources/assets/crowncinder/textures/item/knight_blade.png | grep -q '32 x 32'
