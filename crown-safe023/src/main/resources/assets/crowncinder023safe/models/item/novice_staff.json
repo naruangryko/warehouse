@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:item/handheld",
+  "textures": {"layer0": "minecraft:item/blaze_rod"},
+  "display": {
+    "firstperson_righthand": {"rotation": [0,-90,25], "translation": [1.13,3.2,1.13], "scale": [1.05,1.35,1.05]},
+    "thirdperson_righthand": {"rotation": [0,90,-35], "translation": [0,2.5,0], "scale": [1.0,1.25,1.0]}
+  }
+}
