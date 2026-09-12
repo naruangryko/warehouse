@@ -1,4 +1,4 @@
-name: Build Crown and Cinder 0.20.0 Helper
+name: Build Crown and Cinder 0.20.1 Helper
 on:
   push:
     branches: [crown-cinder-0.18.0-patch]
@@ -25,19 +25,19 @@ jobs:
       - name: Verify JAR
         working-directory: crown-018
         run: |
-          test -f build/libs/crown-and-cinder-0.20.0-helper-0.20.0.jar
-          jar tf build/libs/crown-and-cinder-0.20.0-helper-0.20.0.jar | grep -q 'dev/crowncinderpatch/CrownCinderPatch.class'
-          jar tf build/libs/crown-and-cinder-0.20.0-helper-0.20.0.jar | grep -q 'dev/crowncinderpatch/KingdomWorldState.class'
-          jar tf build/libs/crown-and-cinder-0.20.0-helper-0.20.0.jar | grep -q 'dev/crowncinderpatch/NpcBootstrap020.class'
-          jar tf build/libs/crown-and-cinder-0.20.0-helper-0.20.0.jar | grep -q 'dev/crowncinderpatch/OneCapitalCoordinator.class'
-          unzip -p build/libs/crown-and-cinder-0.20.0-helper-0.20.0.jar fabric.mod.json | grep -q '0.20.0'
+          test -f build/libs/crown-and-cinder-0.20.1-helper-0.20.1.jar
+          jar tf build/libs/crown-and-cinder-0.20.1-helper-0.20.1.jar | grep -q 'dev/crowncinderpatch/CrownCinderPatch.class'
+          jar tf build/libs/crown-and-cinder-0.20.1-helper-0.20.1.jar | grep -q 'dev/crowncinderpatch/KingdomWorldState.class'
+          jar tf build/libs/crown-and-cinder-0.20.1-helper-0.20.1.jar | grep -q 'dev/crowncinderpatch/NpcBootstrap020.class'
+          jar tf build/libs/crown-and-cinder-0.20.1-helper-0.20.1.jar | grep -q 'dev/crowncinderpatch/OneCapitalCoordinator.class'
+          unzip -p build/libs/crown-and-cinder-0.20.1-helper-0.20.1.jar fabric.mod.json | grep -q '0.20.1'
       - name: Stage artifact
         run: |
-          mkdir -p release-020
-          cp crown-018/build/libs/crown-and-cinder-0.20.0-helper-0.20.0.jar release-020/crown-and-cinder-0.20.0-helper-fabric-1.20.1.jar
-          sha256sum release-020/crown-and-cinder-0.20.0-helper-fabric-1.20.1.jar > release-020/SHA256.txt
+          mkdir -p release-0201
+          cp crown-018/build/libs/crown-and-cinder-0.20.1-helper-0.20.1.jar release-0201/crown-and-cinder-0.20.1-helper-fabric-1.20.1.jar
+          sha256sum release-0201/crown-and-cinder-0.20.1-helper-fabric-1.20.1.jar > release-0201/SHA256.txt
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: crown-and-cinder-0.20.0-helper
-          path: release-020/
+          name: crown-and-cinder-0.20.1-helper
+          path: release-0201/
