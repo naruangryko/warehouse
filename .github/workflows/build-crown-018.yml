@@ -1,4 +1,4 @@
-name: Build Crown and Cinder 0.18.0 Expansion Patch
+name: Build Crown and Cinder 0.19.0 Expansion Patch
 on:
   push:
     branches: [crown-cinder-0.18.0-patch]
@@ -25,17 +25,18 @@ jobs:
       - name: Verify JAR
         working-directory: crown-018
         run: |
-          test -f build/libs/crown-and-cinder-0.18.0-expansion-patch-0.18.0.jar
-          jar tf build/libs/crown-and-cinder-0.18.0-expansion-patch-0.18.0.jar | grep -q 'dev/crowncinderpatch/CrownCinderPatch.class'
-          jar tf build/libs/crown-and-cinder-0.18.0-expansion-patch-0.18.0.jar | grep -q 'dev/crowncinderpatch/MedievalKingdoms.class'
-          unzip -p build/libs/crown-and-cinder-0.18.0-expansion-patch-0.18.0.jar fabric.mod.json | grep -q '0.18.0'
+          test -f build/libs/crown-and-cinder-0.19.0-expansion-patch-0.19.0.jar
+          jar tf build/libs/crown-and-cinder-0.19.0-expansion-patch-0.19.0.jar | grep -q 'dev/crowncinderpatch/CrownCinderPatch.class'
+          jar tf build/libs/crown-and-cinder-0.19.0-expansion-patch-0.19.0.jar | grep -q 'dev/crowncinderpatch/CombatStatFix.class'
+          jar tf build/libs/crown-and-cinder-0.19.0-expansion-patch-0.19.0.jar | grep -q 'dev/crowncinderpatch/MedievalKingdoms.class'
+          unzip -p build/libs/crown-and-cinder-0.19.0-expansion-patch-0.19.0.jar fabric.mod.json | grep -q '0.19.0'
       - name: Stage artifact
         run: |
-          mkdir -p release-018
-          cp crown-018/build/libs/crown-and-cinder-0.18.0-expansion-patch-0.18.0.jar release-018/crown-and-cinder-0.18.0-expansion-patch-fabric-1.20.1.jar
-          sha256sum release-018/crown-and-cinder-0.18.0-expansion-patch-fabric-1.20.1.jar > release-018/SHA256.txt
+          mkdir -p release-019
+          cp crown-018/build/libs/crown-and-cinder-0.19.0-expansion-patch-0.19.0.jar release-019/crown-and-cinder-0.19.0-expansion-patch-fabric-1.20.1.jar
+          sha256sum release-019/crown-and-cinder-0.19.0-expansion-patch-fabric-1.20.1.jar > release-019/SHA256.txt
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: crown-and-cinder-0.18.0-expansion-patch
-          path: release-018/
+          name: crown-and-cinder-0.19.0-expansion-patch
+          path: release-019/
