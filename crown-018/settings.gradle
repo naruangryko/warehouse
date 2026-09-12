@@ -1,0 +1,8 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+rootProject.name = 'crown-and-cinder-0.18.0-expansion-patch'

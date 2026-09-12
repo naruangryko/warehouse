@@ -1,0 +1,41 @@
+name: Build Crown and Cinder 0.18.0 Expansion Patch
+on:
+  push:
+    branches: [crown-cinder-0.18.0-patch]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Build Fabric patch
+        working-directory: crown-018
+        run: gradle --no-daemon clean remapJar --stacktrace
+      - name: Verify JAR
+        working-directory: crown-018
+        run: |
+          test -f build/libs/crown-and-cinder-0.18.0-expansion-patch-0.18.0.jar
+          jar tf build/libs/crown-and-cinder-0.18.0-expansion-patch-0.18.0.jar | grep -q 'dev/crowncinderpatch/CrownCinderPatch.class'
+          jar tf build/libs/crown-and-cinder-0.18.0-expansion-patch-0.18.0.jar | grep -q 'dev/crowncinderpatch/MedievalKingdoms.class'
+          unzip -p build/libs/crown-and-cinder-0.18.0-expansion-patch-0.18.0.jar fabric.mod.json | grep -q '0.18.0'
+      - name: Stage artifact
+        run: |
+          mkdir -p release-018
+          cp crown-018/build/libs/crown-and-cinder-0.18.0-expansion-patch-0.18.0.jar release-018/crown-and-cinder-0.18.0-expansion-patch-fabric-1.20.1.jar
+          sha256sum release-018/crown-and-cinder-0.18.0-expansion-patch-fabric-1.20.1.jar > release-018/SHA256.txt
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crown-and-cinder-0.18.0-expansion-patch
+          path: release-018/

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "crowncinder018",
+  "version": "${version}",
+  "name": "Crown & Cinder 0.18.0 Expansion Patch",
+  "description": "Ground-safe medieval kingdom rebuild, fantasy citizens and rapid level tools for Crown & Cinder 0.17.x.",
+  "authors": ["Crown & Cinder Project"],
+  "license": "All Rights Reserved",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["dev.crowncinderpatch.CrownCinderPatch"]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "minecraft": "1.20.1",
+    "java": ">=17",
+    "fabric-api": "*",
+    "crowncinder": ">=0.17.0"
+  }
+}
