@@ -1,9 +1,10 @@
 package dev.crowncinderpatch;
 
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.particle.ParticleEffect;
 import net.minecraft.particle.ParticleTypes;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
@@ -17,6 +18,14 @@ public final class MagicSystem023 {
             if (++ticks % 40 != 0) return;
             for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) syncLearning(p);
         });
+    }
+
+    public static void giveStaffOnce(ServerPlayerEntity player, Item staff) {
+        if (player.getCommandTags().contains("crown023_staff_given")) return;
+        ItemStack stack = new ItemStack(staff);
+        if (!player.giveItemStack(stack)) player.dropItem(stack, false);
+        player.addCommandTag("crown023_staff_given");
+        player.sendMessage(Text.literal("§d[마법] §f마법 스태프를 지급했습니다. Lv.10마다 새 마법을 배우거나 마법서를 사용할 수 있습니다."), false);
     }
 
     public static void syncLearning(ServerPlayerEntity player) {
@@ -36,6 +45,12 @@ public final class MagicSystem023 {
         int tier = Math.min(10, Math.max(0, RpgProgressBridge.getLevel(player) / 10));
         if (tier == 0 && player.getCommandTags().contains("crown023_spellbook_basic")) tier = 1;
         return tier;
+    }
+
+    public static String status(ServerPlayerEntity player) {
+        int tier = magicTier(player);
+        if (tier <= 0) return "배운 마법 없음 · Lv.10 또는 마법서 필요";
+        return "Tier " + tier + " · " + spellName(tier) + " · 마력 " + RpgProgressBridge.getMagicPower(player);
     }
 
     public static String spellName(int tier) {
