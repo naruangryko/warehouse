@@ -1,0 +1,43 @@
+name: Build Crown and Cinder 0.23 Safe
+on:
+  push:
+    branches: [crown-cinder-0.18.0-patch]
+    paths:
+      - 'crown-safe023/**'
+      - '.github/workflows/build-crown-safe023.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Build safe addon
+        working-directory: crown-safe023
+        run: gradle --no-daemon clean remapJar --stacktrace
+      - name: Verify safe JAR
+        working-directory: crown-safe023
+        run: |
+          JAR=$(ls build/libs/crown-and-cinder-0.23.1-safe-*.jar | grep -v sources | head -1)
+          test -n "$JAR"
+          jar tf "$JAR" | grep -q 'dev/crowncindersafe/Safe023.class'
+          unzip -p "$JAR" fabric.mod.json | grep -q 'crowncinder023safe'
+          unzip -p "$JAR" fabric.mod.json | grep -q '0.23.1'
+      - name: Stage artifact
+        run: |
+          mkdir -p release-safe023
+          JAR=$(ls crown-safe023/build/libs/crown-and-cinder-0.23.1-safe-*.jar | grep -v sources | head -1)
+          cp "$JAR" release-safe023/crown-and-cinder-0.23.1-safe-addon-fabric-1.20.1.jar
+          sha256sum release-safe023/crown-and-cinder-0.23.1-safe-addon-fabric-1.20.1.jar > release-safe023/SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crown-and-cinder-0.23.1-safe-addon
+          path: release-safe023/
