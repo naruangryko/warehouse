@@ -1,4 +1,4 @@
-name: Build Crown and Cinder 0.21.0 Helper
+name: Build Crown and Cinder 0.22.0 Helper
 on:
   push:
     branches: [crown-cinder-0.18.0-patch]
@@ -25,20 +25,22 @@ jobs:
       - name: Verify JAR
         working-directory: crown-018
         run: |
-          test -f build/libs/crown-and-cinder-0.21.0-helper-0.21.0.jar
-          jar tf build/libs/crown-and-cinder-0.21.0-helper-0.21.0.jar | grep -q 'dev/crowncinderpatch/CrownCinderPatch.class'
-          jar tf build/libs/crown-and-cinder-0.21.0-helper-0.21.0.jar | grep -q 'dev/crowncinderpatch/RoyalInterior021.class'
-          jar tf build/libs/crown-and-cinder-0.21.0-helper-0.21.0.jar | grep -q 'dev/crowncinderpatch/MilitaryBootstrap021.class'
-          jar tf build/libs/crown-and-cinder-0.21.0-helper-0.21.0.jar | grep -q 'dev/crowncinderpatch/StarterKit021.class'
-          jar tf build/libs/crown-and-cinder-0.21.0-helper-0.21.0.jar | grep -q 'dev/crowncinderpatch/mixin/HuntQuestMapMixin.class'
-          unzip -p build/libs/crown-and-cinder-0.21.0-helper-0.21.0.jar fabric.mod.json | grep -q '0.21.0'
+          test -f build/libs/crown-and-cinder-0.22.0-helper-0.22.0.jar
+          jar tf build/libs/crown-and-cinder-0.22.0-helper-0.22.0.jar | grep -q 'dev/crowncinderpatch/CrownCinderPatch.class'
+          jar tf build/libs/crown-and-cinder-0.22.0-helper-0.22.0.jar | grep -q 'dev/crowncinderpatch/MilitaryBootstrap021.class'
+          jar tf build/libs/crown-and-cinder-0.22.0-helper-0.22.0.jar | grep -q 'dev/crowncinderpatch/KnightProofQuest022.class'
+          jar tf build/libs/crown-and-cinder-0.22.0-helper-0.22.0.jar | grep -q 'dev/crowncinderpatch/KnightProofQuestState022.class'
+          jar tf build/libs/crown-and-cinder-0.22.0-helper-0.22.0.jar | grep -q 'dev/crowncinderpatch/RoyalInterior021.class'
+          jar tf build/libs/crown-and-cinder-0.22.0-helper-0.22.0.jar | grep -q 'dev/crowncinderpatch/StarterKit021.class'
+          jar tf build/libs/crown-and-cinder-0.22.0-helper-0.22.0.jar | grep -q 'dev/crowncinderpatch/mixin/HuntQuestMapMixin.class'
+          unzip -p build/libs/crown-and-cinder-0.22.0-helper-0.22.0.jar fabric.mod.json | grep -q '0.22.0'
       - name: Stage artifact
         run: |
-          mkdir -p release-021
-          cp crown-018/build/libs/crown-and-cinder-0.21.0-helper-0.21.0.jar release-021/crown-and-cinder-0.21.0-helper-fabric-1.20.1.jar
-          sha256sum release-021/crown-and-cinder-0.21.0-helper-fabric-1.20.1.jar > release-021/SHA256.txt
+          mkdir -p release-022
+          cp crown-018/build/libs/crown-and-cinder-0.22.0-helper-0.22.0.jar release-022/crown-and-cinder-0.22.0-helper-fabric-1.20.1.jar
+          sha256sum release-022/crown-and-cinder-0.22.0-helper-fabric-1.20.1.jar > release-022/SHA256.txt
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: crown-and-cinder-0.21.0-helper
-          path: release-021/
+          name: crown-and-cinder-0.22.0-helper
+          path: release-022/
