@@ -1,7 +1,10 @@
 package dev.crowncindersafe;
 
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
+import net.minecraft.entity.EntityType;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
@@ -10,6 +13,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ArmorItem;
 import net.minecraft.item.ArmorMaterials;
 import net.minecraft.item.Item;
+import net.minecraft.item.ItemGroups;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.particle.ParticleTypes;
@@ -53,6 +57,25 @@ public final class Safe026 implements ModInitializer {
         Registry.register(Registries.ITEM, id("nature_rod"), NATURE_ROD);
         Registry.register(Registries.ITEM, id("archmage_staff"), ARCHMAGE_STAFF);
         Registry.register(Registries.ITEM, id("archmage_cloak"), ARCHMAGE_CLOAK);
+
+        ItemGroupEvents.modifyEntriesEvent(ItemGroups.COMBAT).register(entries -> {
+            entries.add(NATURE_ROD);
+            entries.add(ARCHMAGE_STAFF);
+            entries.add(ARCHMAGE_CLOAK);
+        });
+
+        ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
+            if (entity.getWorld().isClient()) return;
+            float roll = entity.getRandom().nextFloat();
+            if (entity.getType() == EntityType.WITCH && roll < 0.12f) {
+                entity.dropStack(new ItemStack(NATURE_ROD));
+            } else if (entity.getType() == EntityType.EVOKER && roll < 0.08f) {
+                entity.dropStack(new ItemStack(ARCHMAGE_STAFF));
+            } else if (entity.getType() == EntityType.WITHER && roll < 0.25f) {
+                entity.dropStack(new ItemStack(ARCHMAGE_CLOAK));
+            }
+        });
+
         ServerTickEvents.END_SERVER_TICK.register(this::serverTick);
     }
 
@@ -292,7 +315,6 @@ public final class Safe026 implements ModInitializer {
                 e.setOnFireFor(12);
             }
         }
-        // One bounded terrain explosion; no repeated block loops, to keep server cost predictable.
         w.createExplosion(p, impact.x, impact.y, impact.z, 6.0f, World.ExplosionSourceType.MOB);
         w.spawnParticles(ParticleTypes.FLAME, impact.x,impact.y,impact.z, 220, 5.0,3.0,5.0,.12);
         w.spawnParticles(ParticleTypes.SOUL_FIRE_FLAME, impact.x,impact.y,impact.z, 160, 4.0,2.5,4.0,.09);
