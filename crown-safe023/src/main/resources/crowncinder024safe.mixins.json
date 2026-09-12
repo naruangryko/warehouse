@@ -1,0 +1,12 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "dev.crowncindersafe.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "KingdomHeightMixin024"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}
