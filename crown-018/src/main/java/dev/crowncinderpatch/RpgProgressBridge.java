@@ -66,6 +66,58 @@ public final class RpgProgressBridge {
         }
     }
 
+    public static boolean addPoints(ServerPlayerEntity player, int amount) {
+        try {
+            Object progress = progress(player);
+            Field points = field(progress, "points");
+            long next = (long) points.getInt(progress) + amount;
+            points.setInt(progress, (int)Math.max(0, Math.min(1_000_000, next)));
+            dirtyAndApply(player);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    public static boolean setPoints(ServerPlayerEntity player, int amount) {
+        try {
+            Object progress = progress(player);
+            field(progress, "points").setInt(progress, Math.max(0, Math.min(1_000_000, amount)));
+            dirtyAndApply(player);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    public static int getPoints(ServerPlayerEntity player) {
+        try {
+            return field(progress(player), "points").getInt(progress(player));
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    public static int getStrength(ServerPlayerEntity player) {
+        try {
+            Object progress = progress(player);
+            return field(progress, "strength").getInt(progress);
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    /**
+     * Re-applies Crown & Cinder's own configured attribute modifiers. This is intentionally called after
+     * item/equipment updates so custom weapon attribute swaps cannot leave the Strength modifier missing.
+     */
+    public static void refreshCombatStats(ServerPlayerEntity player) {
+        try {
+            Class<?> service = Class.forName("dev.crowncinder.progress.ProgressService");
+            apply(service, player);
+        } catch (Throwable ignored) {}
+    }
+
     public static int getLevel(ServerPlayerEntity player) {
         try {
             Object progress = progress(player);
@@ -103,6 +155,6 @@ public final class RpgProgressBridge {
     }
 
     public static void feedback(ServerPlayerEntity player, String what, boolean crownIntegrated) {
-        player.sendMessage(Text.literal("§6[Crown & Cinder] §f" + what + (crownIntegrated ? " §7(RPG 레벨 반영)" : " §7(바닐라 경험치 대체)")), false);
+        player.sendMessage(Text.literal("§6[Crown & Cinder] §f" + what + (crownIntegrated ? " §7(RPG 데이터 반영)" : " §c(RPG 데이터 연결 실패)")), false);
     }
 }
