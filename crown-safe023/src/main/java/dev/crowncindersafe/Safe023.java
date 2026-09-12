@@ -10,12 +10,15 @@ import net.minecraft.command.CommandSource;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.particle.ParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.registry.Registries;
@@ -42,10 +45,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
 
-/**
- * Crash-safe 0.23 feature layer. Uses a unique package/mod id so it can coexist with the 0.22 unified JAR.
- * All integration with the existing RPG progress system is guarded by reflection and failure fallbacks.
- */
+/** Crash-safe feature layer for Crown & Cinder 0.22. */
 public final class Safe023 implements ModInitializer {
     public static final String MOD_ID = "crowncinder023safe";
     public static final Item ARCANE_STAFF = new ArcaneStaff(new Item.Settings().maxCount(1));
@@ -55,6 +55,7 @@ public final class Safe023 implements ModInitializer {
         "strength", "vitality", "defense", "agility", "attackspeed", "movespeed",
         "magic", "magicdefense", "critchance", "critdamage", "regeneration", "stamina"
     );
+    private static final String SELECTED_SPELL_KEY = "CrownSelectedSpell";
     private static int serverTicks = 0;
     private static int worldTicks = 0;
 
@@ -68,13 +69,13 @@ public final class Safe023 implements ModInitializer {
             try {
                 if (!p.getCommandTags().contains("ccsafe_staff_granted")) {
                     p.addCommandTag("ccsafe_staff_granted");
-                    p.giveItemStack(new ItemStack(ARCANE_STAFF));
-                    p.sendMessage(Text.literal("§b[Crown & Cinder] §f마법 스태프를 지급했습니다. Lv.10 또는 마법서 사용 후 우클릭해 보세요."), false);
+                    ItemStack staff = new ItemStack(ARCANE_STAFF);
+                    setSelectedSpell(staff, 1);
+                    p.giveItemStack(staff);
+                    p.sendMessage(Text.literal("§b[Crown & Cinder] §f마법 스태프 지급! §e쉬프트+우클릭§f으로 마법 선택, §b우클릭§f으로 발동합니다."), false);
                 }
                 syncMilestones(p);
-            } catch (Throwable t) {
-                // Never fail login because an optional feature failed.
-            }
+            } catch (Throwable ignored) {}
         }));
 
         ServerTickEvents.END_SERVER_TICK.register(this::serverTick);
@@ -105,15 +106,24 @@ public final class Safe023 implements ModInitializer {
             rpg.then(CommandManager.literal("magic")
                 .executes(ctx -> {
                     ServerPlayerEntity p = ctx.getSource().getPlayer();
-                    int level = getLevel(p);
-                    int tier = magicTier(p);
-                    p.sendMessage(Text.literal("§d[마법] §fLv." + level + " · " + spellName(tier) + " · 마법 단계 " + tier), false);
+                    int unlocked = magicTier(p);
+                    p.sendMessage(Text.literal("§d[마법] §fLv." + getLevel(p) + " · 사용 가능 " + unlocked + "/10"), false);
+                    if (unlocked > 0) {
+                        StringBuilder b = new StringBuilder("§7");
+                        for (int i = 1; i <= unlocked; i++) {
+                            if (i > 1) b.append(" §8/ §7");
+                            b.append(i).append(".").append(spellName(i));
+                        }
+                        p.sendMessage(Text.literal(b.toString()), false);
+                    }
                     return 1;
                 })
                 .then(CommandManager.literal("book").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
                     ServerPlayerEntity p = ctx.getSource().getPlayer();
                     p.giveItemStack(new ItemStack(SPELLBOOK));
-                    p.giveItemStack(new ItemStack(ARCANE_STAFF));
+                    ItemStack staff = new ItemStack(ARCANE_STAFF);
+                    setSelectedSpell(staff, 1);
+                    p.giveItemStack(staff);
                     p.sendMessage(Text.literal("§d마법서§f와 §b마법 스태프§f를 지급했습니다."), false);
                     return 1;
                 })));
@@ -143,7 +153,7 @@ public final class Safe023 implements ModInitializer {
             if (s != Integer.MIN_VALUE && d != Integer.MIN_VALUE && v != Integer.MIN_VALUE) {
                 p.sendMessage(Text.literal("§6[10레벨 성장] §fLv." + milestone + " 보너스: 힘 +2 · 방어 +2 · 생명력 +3"), false);
             }
-            p.sendMessage(Text.literal("§d[마법 습득] §f" + spellName(milestone / 10) + " 사용 가능"), false);
+            p.sendMessage(Text.literal("§d[마법 습득] §f" + spellName(milestone / 10) + " 해금"), false);
         }
     }
 
@@ -161,8 +171,7 @@ public final class Safe023 implements ModInitializer {
     private static void tryNaturalSpawn(ServerWorld world, ServerPlayerEntity player, boolean night) {
         if (!world.getEntitiesByClass(VillagerEntity.class, player.getBoundingBox().expand(96.0), v -> v.isAlive()).isEmpty()) return;
         int hostile = world.getEntitiesByClass(HostileEntity.class, player.getBoundingBox().expand(48.0), e -> e.isAlive()).size();
-        if (hostile >= 18) return;
-        if (world.random.nextInt(3) != 0) return;
+        if (hostile >= 18 || world.random.nextInt(3) != 0) return;
 
         int dx = 20 + world.random.nextInt(21);
         int dz = 20 + world.random.nextInt(21);
@@ -181,8 +190,7 @@ public final class Safe023 implements ModInitializer {
             mobName = pool[world.random.nextInt(pool.length)];
         }
         if (!special && world.getLightLevel(pos) > 7) return;
-        if (!world.getBlockState(pos).isAir() || !world.getBlockState(pos.up()).isAir()) return;
-        if (world.getBlockState(pos.down()).isAir()) return;
+        if (!world.getBlockState(pos).isAir() || !world.getBlockState(pos.up()).isAir() || world.getBlockState(pos.down()).isAir()) return;
 
         Identifier id = new Identifier("crowncinder", mobName);
         if (!Registries.ENTITY_TYPE.containsId(id)) return;
@@ -212,28 +220,75 @@ public final class Safe023 implements ModInitializer {
         return Math.max(fromLevel, fromBook);
     }
 
-    private static String spellName(int tier) {
-        return switch (Math.max(0, tier)) {
-            case 0 -> "미습득";
+    private static String spellName(int spell) {
+        return switch (spell) {
             case 1 -> "마력탄";
-            case 2 -> "화염탄";
-            case 3 -> "서리탄";
-            case 4 -> "관통 마력탄";
-            case 5 -> "약화의 탄환";
-            case 6 -> "대화염탄";
-            case 7 -> "빙결 마법";
-            case 8 -> "성광탄";
-            case 9 -> "심연의 탄환";
-            default -> "대마도사의 일격";
+            case 2 -> "화염창";
+            case 3 -> "빙결창";
+            case 4 -> "마력 폭발";
+            case 5 -> "천둥의 창";
+            case 6 -> "대화염 폭풍";
+            case 7 -> "빙설 폭풍";
+            case 8 -> "성광의 파동";
+            case 9 -> "심연의 구체";
+            case 10 -> "대마도사의 대재앙";
+            default -> "미습득";
         };
     }
 
-    private static ParticleEffect particle(int tier) {
-        if (tier >= 8) return ParticleTypes.END_ROD;
-        if (tier == 2 || tier == 6 || tier == 10) return ParticleTypes.FLAME;
-        if (tier == 3 || tier == 7) return ParticleTypes.SNOWFLAKE;
-        if (tier >= 5) return ParticleTypes.PORTAL;
-        return ParticleTypes.ENCHANT;
+    private static double spellBaseDamage(int spell) {
+        return switch (spell) {
+            case 1 -> 8.0;
+            case 2 -> 13.0;
+            case 3 -> 18.0;
+            case 4 -> 24.0;
+            case 5 -> 31.0;
+            case 6 -> 39.0;
+            case 7 -> 48.0;
+            case 8 -> 58.0;
+            case 9 -> 70.0;
+            case 10 -> 88.0;
+            default -> 5.0;
+        };
+    }
+
+    private static double spellMagicScale(int spell) { return 0.30 + spell * 0.07; }
+    private static double spellRange(int spell) { return Math.min(44.0, 20.0 + spell * 2.4); }
+    private static double spellRadius(int spell) {
+        return switch (spell) {
+            case 4 -> 2.5;
+            case 5 -> 2.8;
+            case 6 -> 3.8;
+            case 7 -> 4.2;
+            case 8 -> 4.8;
+            case 9 -> 5.4;
+            case 10 -> 6.5;
+            default -> 0.8;
+        };
+    }
+
+    private static ParticleEffect spellParticle(int spell) {
+        return switch (spell) {
+            case 2, 6 -> ParticleTypes.SOUL_FIRE_FLAME;
+            case 3, 7 -> ParticleTypes.SNOWFLAKE;
+            case 5 -> ParticleTypes.ELECTRIC_SPARK;
+            case 8 -> ParticleTypes.END_ROD;
+            case 9 -> ParticleTypes.DRAGON_BREATH;
+            case 10 -> ParticleTypes.REVERSE_PORTAL;
+            default -> ParticleTypes.ENCHANT;
+        };
+    }
+
+    private static int selectedSpell(ItemStack stack, int unlocked) {
+        int max = Math.max(1, unlocked);
+        NbtCompound nbt = stack.getNbt();
+        int selected = nbt != null && nbt.contains(SELECTED_SPELL_KEY) ? nbt.getInt(SELECTED_SPELL_KEY) : 1;
+        if (selected < 1 || selected > max) selected = 1;
+        return selected;
+    }
+
+    private static void setSelectedSpell(ItemStack stack, int spell) {
+        stack.getOrCreateNbt().putInt(SELECTED_SPELL_KEY, Math.max(1, Math.min(10, spell)));
     }
 
     private static final class ArcaneStaff extends Item {
@@ -244,37 +299,99 @@ public final class Safe023 implements ModInitializer {
             ItemStack stack = user.getStackInHand(hand);
             if (world.isClient || !(user instanceof ServerPlayerEntity p)) return TypedActionResult.success(stack, world.isClient());
             try {
-                int tier = magicTier(p);
-                if (tier <= 0) {
+                int unlocked = magicTier(p);
+                if (unlocked <= 0) {
                     p.sendMessage(Text.literal("§d[마법] §fLv.10을 달성하거나 마법서를 먼저 사용하세요."), false);
                     return TypedActionResult.fail(stack);
                 }
-                ServerWorld sw = p.getServerWorld();
-                double damage = 5.0 + tier * 2.0 + Math.max(0, getStat(p, "magic")) * 0.30;
-                double range = Math.min(36.0, 20.0 + tier * 1.5);
-                Vec3d start = p.getEyePos();
-                Vec3d dir = p.getRotationVec(1.0f).normalize();
-                LivingEntity hit = null;
-                ParticleEffect fx = particle(tier);
-                for (double d = 0.8; d <= range && hit == null; d += 0.65) {
-                    Vec3d at = start.add(dir.multiply(d));
-                    sw.spawnParticles(fx, at.x, at.y, at.z, 2, 0.03, 0.03, 0.03, 0.002);
-                    Box box = new Box(at.x - 0.7, at.y - 0.7, at.z - 0.7, at.x + 0.7, at.y + 0.7, at.z + 0.7);
-                    List<HostileEntity> enemies = sw.getEntitiesByClass(HostileEntity.class, box, e -> e.isAlive() && p.canSee(e));
-                    if (!enemies.isEmpty()) hit = enemies.get(0);
+
+                int selected = selectedSpell(stack, unlocked);
+                if (p.isSneaking()) {
+                    int next = selected >= unlocked ? 1 : selected + 1;
+                    setSelectedSpell(stack, next);
+                    p.sendMessage(Text.literal("§d[마법 선택] §f" + next + ". §b" + spellName(next)), true);
+                    p.getServerWorld().playSound(null, p.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.PLAYERS, 0.8f, 1.0f + next * 0.04f);
+                    p.getItemCooldownManager().set(this, 6);
+                    return TypedActionResult.success(stack, false);
                 }
-                if (hit != null) {
-                    hit.damage(p.getDamageSources().playerAttack(p), (float) damage);
-                    sw.spawnParticles(fx, hit.getX(), hit.getBodyY(0.5), hit.getZ(), 18, 0.4, 0.5, 0.4, 0.04);
-                }
-                p.getItemCooldownManager().set(this, Math.max(12, 28 - tier));
-                sw.playSound(null, p.getBlockPos(), SoundEvents.ENTITY_EVOKER_CAST_SPELL, SoundCategory.PLAYERS, 0.7f, 1.0f + tier * 0.03f);
-                p.sendMessage(Text.literal("§b" + spellName(tier) + " §7(" + String.format("%.1f", damage) + " 피해)"), true);
+
+                castSpell(p, stack, selected);
                 return TypedActionResult.success(stack, false);
             } catch (Throwable t) {
                 p.sendMessage(Text.literal("§c마법 사용 중 오류를 안전하게 차단했습니다."), false);
                 return TypedActionResult.fail(stack);
             }
+        }
+    }
+
+    private static void castSpell(ServerPlayerEntity p, ItemStack staff, int spell) {
+        ServerWorld sw = p.getServerWorld();
+        int magicPower = Math.max(0, getStat(p, "magic"));
+        double damage = spellBaseDamage(spell) + magicPower * spellMagicScale(spell);
+        double range = spellRange(spell);
+        double radius = spellRadius(spell);
+        ParticleEffect fx = spellParticle(spell);
+
+        Vec3d start = p.getEyePos();
+        Vec3d dir = p.getRotationVec(1.0f).normalize();
+        LivingEntity hit = null;
+        Vec3d impact = start.add(dir.multiply(range));
+        int trailCount = Math.min(9, 2 + spell / 2);
+
+        for (double d = 0.8; d <= range && hit == null; d += 0.55) {
+            Vec3d at = start.add(dir.multiply(d));
+            impact = at;
+            sw.spawnParticles(fx, at.x, at.y, at.z, trailCount, 0.06 + spell * 0.01, 0.06 + spell * 0.01, 0.06 + spell * 0.01, 0.01);
+            if (spell >= 6 && ((int)(d * 10)) % 11 == 0) {
+                sw.spawnParticles(ParticleTypes.END_ROD, at.x, at.y, at.z, 3, 0.12, 0.12, 0.12, 0.01);
+            }
+            Box box = new Box(at.x - 0.8, at.y - 0.8, at.z - 0.8, at.x + 0.8, at.y + 0.8, at.z + 0.8);
+            List<HostileEntity> enemies = sw.getEntitiesByClass(HostileEntity.class, box, e -> e.isAlive() && p.canSee(e));
+            if (!enemies.isEmpty()) hit = enemies.get(0);
+        }
+
+        if (hit != null) {
+            impact = hit.getPos().add(0, hit.getHeight() * 0.5, 0);
+            if (spell <= 3) {
+                damageAndDebuff(p, hit, (float)damage, spell);
+            } else {
+                Box area = new Box(impact.x - radius, impact.y - radius, impact.z - radius, impact.x + radius, impact.y + radius, impact.z + radius);
+                List<HostileEntity> targets = sw.getEntitiesByClass(HostileEntity.class, area, e -> e.isAlive());
+                for (HostileEntity target : targets) {
+                    double distance = Math.max(0.0, target.getPos().distanceTo(impact));
+                    float scaled = (float)Math.max(damage * 0.55, damage * (1.0 - distance / (radius * 2.0)));
+                    damageAndDebuff(p, target, scaled, spell);
+                }
+            }
+        }
+
+        int impactCount = 28 + spell * 14;
+        double spread = 0.45 + spell * 0.10;
+        sw.spawnParticles(fx, impact.x, impact.y, impact.z, impactCount, spread, spread, spread, 0.05 + spell * 0.005);
+        if (spell >= 4) sw.spawnParticles(ParticleTypes.EXPLOSION, impact.x, impact.y, impact.z, Math.min(10, spell), spread * 0.5, spread * 0.5, spread * 0.5, 0.02);
+        if (spell >= 7) sw.spawnParticles(ParticleTypes.FLASH, impact.x, impact.y, impact.z, 2, 0.2, 0.2, 0.2, 0.0);
+        if (spell == 10) {
+            sw.spawnParticles(ParticleTypes.EXPLOSION_EMITTER, impact.x, impact.y, impact.z, 2, 0.4, 0.4, 0.4, 0.0);
+            sw.spawnParticles(ParticleTypes.DRAGON_BREATH, impact.x, impact.y, impact.z, 160, 2.8, 2.8, 2.8, 0.09);
+        }
+
+        sw.playSound(null, p.getBlockPos(), SoundEvents.ENTITY_EVOKER_CAST_SPELL, SoundCategory.PLAYERS, 0.9f + spell * 0.04f, 0.95f + spell * 0.025f);
+        if (spell >= 5) sw.playSound(null, BlockPos.ofFloored(impact), SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.PLAYERS, 0.7f + spell * 0.05f, 1.2f - spell * 0.025f);
+
+        int cooldown = 18 + spell * 2;
+        p.getItemCooldownManager().set(ARCANE_STAFF, cooldown);
+        p.sendMessage(Text.literal("§b" + spellName(spell) + " §7| 위력 " + String.format("%.1f", damage) + " | 범위 " + String.format("%.1f", radius)), true);
+    }
+
+    private static void damageAndDebuff(ServerPlayerEntity p, HostileEntity target, float damage, int spell) {
+        target.damage(p.getDamageSources().playerAttack(p), damage);
+        if (spell == 2 || spell == 6) target.setOnFireFor(spell == 6 ? 8 : 4);
+        if (spell == 3 || spell == 7) target.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, spell == 7 ? 140 : 80, spell == 7 ? 2 : 1));
+        if (spell == 5) target.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 100, 1));
+        if (spell == 9) target.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 80, 1));
+        if (spell == 10) {
+            target.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 120, 2));
+            target.setOnFireFor(6);
         }
     }
 
@@ -287,7 +404,7 @@ public final class Safe023 implements ModInitializer {
             if (!world.isClient && user instanceof ServerPlayerEntity p) {
                 try {
                     p.addCommandTag("ccsafe_magic_book");
-                    p.sendMessage(Text.literal("§d[마법서] §f기본 마법 '마력탄'을 배웠습니다."), false);
+                    p.sendMessage(Text.literal("§d[마법서] §f기본 마법 '마력탄'을 배웠습니다. 스태프를 들고 §e쉬프트+우클릭§f으로 마법을 선택하세요."), false);
                     if (!p.getAbilities().creativeMode) stack.decrement(1);
                 } catch (Throwable ignored) {}
             }
@@ -297,31 +414,30 @@ public final class Safe023 implements ModInitializer {
 
     private static int getLevel(ServerPlayerEntity p) {
         try {
-            Object progress = progress(p);
+            Class<?> service = Class.forName("dev.crowncinder.progress.ProgressService");
+            Object progress = service.getMethod("get", ServerPlayerEntity.class).invoke(null, p);
             return field(progress, "level").getInt(progress);
-        } catch (Throwable ignored) {
-            return Math.max(1, p.experienceLevel);
-        }
+        } catch (Throwable ignored) { return Math.max(1, p.experienceLevel); }
     }
 
     private static int getStat(ServerPlayerEntity p, String stat) {
         try {
             Object progress = progress(p);
-            String f = statField(stat);
-            if (f == null) return 0;
-            return field(progress, f).getInt(progress);
+            String fieldName = statField(stat);
+            if (fieldName == null) return 0;
+            return field(progress, fieldName).getInt(progress);
         } catch (Throwable ignored) { return 0; }
     }
 
     private static int addStat(ServerPlayerEntity p, String stat, int amount) {
         try {
             Object progress = progress(p);
-            String fName = statField(stat);
-            if (fName == null) return Integer.MIN_VALUE;
-            Field f = field(progress, fName);
+            String fieldName = statField(stat);
+            if (fieldName == null) return Integer.MIN_VALUE;
+            Field f = field(progress, fieldName);
             int value = Math.max(0, Math.min(10000, f.getInt(progress) + amount));
             f.setInt(progress, value);
-            markDirtyAndApply(p);
+            dirtyAndApply(p);
             return value;
         } catch (Throwable ignored) { return Integer.MIN_VALUE; }
     }
@@ -355,18 +471,17 @@ public final class Safe023 implements ModInitializer {
         return f;
     }
 
-    private static void refresh(ServerPlayerEntity p) {
-        try {
-            Class<?> service = Class.forName("dev.crowncinder.progress.ProgressService");
-            Method apply = service.getMethod("apply", ServerPlayerEntity.class);
-            apply.invoke(null, p);
-        } catch (Throwable ignored) {}
-    }
-
-    private static void markDirtyAndApply(ServerPlayerEntity p) throws Exception {
+    private static void dirtyAndApply(ServerPlayerEntity p) throws Exception {
         Class<?> service = Class.forName("dev.crowncinder.progress.ProgressService");
         Object store = service.getMethod("store", ServerPlayerEntity.class).invoke(null, p);
         store.getClass().getMethod("markDirty").invoke(store);
-        refresh(p);
+        try { service.getMethod("apply", ServerPlayerEntity.class).invoke(null, p); } catch (Throwable ignored) {}
+    }
+
+    private static void refresh(ServerPlayerEntity p) {
+        try {
+            Class<?> service = Class.forName("dev.crowncinder.progress.ProgressService");
+            service.getMethod("apply", ServerPlayerEntity.class).invoke(null, p);
+        } catch (Throwable ignored) {}
     }
 }
