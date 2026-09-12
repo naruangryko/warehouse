@@ -12,6 +12,7 @@ public final class KingdomWorldState extends PersistentState {
     public boolean built020;
     public boolean npcsSeeded;
     public boolean built021;
+    public boolean built022;
 
     public static KingdomWorldState get(ServerWorld world) {
         return world.getPersistentStateManager().getOrCreate(KingdomWorldState::read, KingdomWorldState::new, "crowncinder_020_world");
@@ -25,6 +26,7 @@ public final class KingdomWorldState extends PersistentState {
         s.built020 = nbt.getBoolean("built020");
         s.npcsSeeded = nbt.getBoolean("npcsSeeded");
         s.built021 = nbt.getBoolean("built021");
+        s.built022 = nbt.getBoolean("built022");
         return s;
     }
 
@@ -36,6 +38,7 @@ public final class KingdomWorldState extends PersistentState {
         nbt.putBoolean("built020", built020);
         nbt.putBoolean("npcsSeeded", npcsSeeded);
         nbt.putBoolean("built021", built021);
+        nbt.putBoolean("built022", built022);
         return nbt;
     }
 }
