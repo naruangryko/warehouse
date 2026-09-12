@@ -8,7 +8,8 @@
     "LegacyCapitalVillageMixin",
     "LegacyRoyalCapitalMixin",
     "LegacyCapitalExpansionMixin",
-    "LegacyNationWorldMixin"
+    "LegacyNationWorldMixin",
+    "HuntQuestMapMixin"
   ],
   "injectors": {
     "defaultRequire": 1
