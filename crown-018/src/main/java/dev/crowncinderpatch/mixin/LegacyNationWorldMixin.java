@@ -3,11 +3,13 @@ package dev.crowncinderpatch.mixin;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** Blocks every legacy world-generation entry point that can recreate the old buried capitals. */
+@Pseudo
 @Mixin(targets = "dev.crowncinder.world.NationWorld", remap = false)
 public abstract class LegacyNationWorldMixin {
     @Inject(method = "ensureNearby", at = @At("HEAD"), cancellable = true, remap = false)
