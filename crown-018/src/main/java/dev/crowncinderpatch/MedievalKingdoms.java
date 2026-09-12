@@ -13,6 +13,7 @@ import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
 import net.minecraft.world.Heightmap;
 import net.minecraft.village.VillagerProfession;
 import net.minecraft.village.VillagerType;
@@ -21,10 +22,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * Surface-safe medieval capital builder. It intentionally does not touch any Crown & Cinder monster class,
- * spawn rule or monster texture. Run through /rpg kingdom rebuild... after backing up a world.
- */
 public final class MedievalKingdoms {
     private MedievalKingdoms() {}
 
@@ -60,6 +57,21 @@ public final class MedievalKingdoms {
         return b.toString();
     }
 
+    public static boolean hasGenerated(ServerWorld world) {
+        BlockPos spawn = world.getSpawnPos();
+        int x = spawn.getX(), z = spawn.getZ();
+        for (int y = world.getBottomY() + 5; y < world.getTopY() - 2; y++) {
+            if (world.getBlockState(new BlockPos(x, y, z)).isOf(Blocks.LODESTONE)) return true;
+        }
+        return false;
+    }
+
+    public static void ensureFreshWorld(ServerWorld world) {
+        if (hasGenerated(world)) return;
+        if (world.getTime() > 6000L) return;
+        rebuildAll(world);
+    }
+
     public static void rebuildAll(ServerWorld world) {
         BlockPos spawn = world.getSpawnPos();
         for (Nation n : NATIONS) rebuild(world, spawn.add(n.dx, 0, n.dz), n);
@@ -68,26 +80,34 @@ public final class MedievalKingdoms {
     public static void rebuild(ServerWorld world, BlockPos roughCenter, Nation nation) {
         int y = sampleBuildHeight(world, roughCenter.getX(), roughCenter.getZ());
         BlockPos c = new BlockPos(roughCenter.getX(), y, roughCenter.getZ());
+        clearOldPatchNpcs(world, c);
         prepareTerrace(world, c, nation.palette);
         buildRoads(world, c, nation.palette);
-        buildOuterWall(world, c, nation.palette);
-        buildGatehouse(world, c, nation.palette);
-        buildKeep(world, c.add(0, 0, -8), nation.palette, nation.name);
-        buildBarracks(world, c.add(27, 0, -10), nation.palette);
-        buildChapel(world, c.add(-27, 0, -10), nation.palette);
+        buildInnerWall(world, c, nation.palette);
+        buildInnerGatehouse(world, c, nation.palette);
+        buildOuterCityWall(world, c, nation.palette);
+        buildOuterGatehouse(world, c, nation.palette);
+
+        buildKeep(world, c.add(0, 0, -8), nation.palette);
+        buildChapel(world, c.add(-25, 0, -12), nation.palette);
         buildMarket(world, c.add(0, 0, 22), nation.palette);
-        buildStables(world, c.add(28, 0, 22), nation.palette);
-        buildHouses(world, c, nation.palette);
+        buildStables(world, c.add(27, 0, 18), nation.palette);
+
+        buildGuildHall(world, c.add(-54, 0, -22), nation.palette, true);
+        buildGuildHall(world, c.add(54, 0, -22), nation.palette, false);
+        buildTavern(world, c.add(-54, 0, 20), nation.palette);
+        buildSmithy(world, c.add(54, 0, 20), nation.palette);
+        buildOuterVillage(world, c, nation.palette);
+
         spawnFantasyCitizens(world, c, nation);
-        placeMarker(world, c, nation.palette);
+        placeMarker(world, c);
     }
 
-    /** Samples an outer ring instead of the old castle footprint so existing/buried buildings do not corrupt Y. */
     public static int sampleBuildHeight(ServerWorld world, int cx, int cz) {
         List<Integer> samples = new ArrayList<>();
-        int[] radii = {62, 70, 78};
+        int[] radii = {80, 86, 92};
         for (int r : radii) {
-            for (int i = -r; i <= r; i += 14) {
+            for (int i = -r; i <= r; i += 12) {
                 samples.add(surfaceY(world, cx + i, cz - r));
                 samples.add(surfaceY(world, cx + i, cz + r));
                 samples.add(surfaceY(world, cx - r, cz + i));
@@ -104,10 +124,9 @@ public final class MedievalKingdoms {
     private static int surfaceY(ServerWorld world, int x, int z) {
         int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
         y = Math.max(y, world.getBottomY() + 1);
-        BlockPos.Mutable pos = new BlockPos.Mutable(x, y, z);
-        // If top is foliage/log, walk down. Water surface is intentionally accepted and becomes an island terrace.
-        for (int i = 0; i < 18 && y > world.getBottomY() + 1; i++) {
-            BlockState state = world.getBlockState(pos.set(x, y, z));
+        BlockPos.Mutable p = new BlockPos.Mutable(x, y, z);
+        for (int i = 0; i < 22 && y > world.getBottomY() + 1; i++) {
+            BlockState state = world.getBlockState(p.set(x, y, z));
             if (!state.isAir() && !state.isIn(BlockTags.LEAVES) && !state.isIn(BlockTags.LOGS)) return y;
             y--;
         }
@@ -115,33 +134,28 @@ public final class MedievalKingdoms {
     }
 
     private static void prepareTerrace(ServerWorld world, BlockPos c, Palette p) {
-        final int r = 46;
+        final int r = 72;
         final int y = c.getY();
         BlockPos.Mutable m = new BlockPos.Mutable();
         for (int x = -r; x <= r; x++) {
             for (int z = -r; z <= r; z++) {
                 int wx = c.getX() + x, wz = c.getZ() + z;
                 int old = surfaceY(world, wx, wz);
-                // Remove old misplaced city/terrain above the new build plane inside the rebuild footprint.
-                for (int yy = y + 1; yy <= Math.min(world.getTopY() - 2, y + 34); yy++) {
-                    if (!world.getBlockState(m.set(wx, yy, wz)).isAir()) world.setBlockState(m, Blocks.AIR.getDefaultState(), 2);
+                int top = Math.min(world.getTopY() - 2, Math.max(old, y + 28));
+                for (int yy = y + 1; yy <= top; yy++) {
+                    BlockState state = world.getBlockState(m.set(wx, yy, wz));
+                    if (!state.isAir()) world.setBlockState(m, Blocks.AIR.getDefaultState(), 2);
                 }
-                // Cut high terrain down to the terrace plane.
-                if (old > y) {
-                    for (int yy = y + 1; yy <= Math.min(old, y + 34); yy++) world.setBlockState(m.set(wx, yy, wz), Blocks.AIR.getDefaultState(), 2);
-                }
-                // Fill valleys/water to the terrace plane. Stone lower core + soil cap.
                 int floor = Math.max(world.getBottomY() + 1, Math.min(old, y));
                 for (int yy = floor + 1; yy < y; yy++) {
                     Block fill = yy >= y - 3 ? Blocks.DIRT : p.wall;
                     world.setBlockState(m.set(wx, yy, wz), fill.getDefaultState(), 2);
                 }
-                world.setBlockState(m.set(wx, y, wz), (Math.abs(x) < 43 && Math.abs(z) < 43 ? Blocks.GRASS_BLOCK : p.wall).getDefaultState(), 2);
-                // Deep ravine/water support pier so the capital visibly meets terrain instead of floating.
-                if (old < y - 6 && ((x + r) % 4 == 0 || (z + r) % 4 == 0)) {
-                    for (int yy = y - 1; yy >= Math.max(old, y - 36); yy--) {
-                        BlockState s = world.getBlockState(m.set(wx, yy, wz));
-                        if (!s.isAir() && s.getFluidState().isEmpty()) break;
+                world.setBlockState(m.set(wx, y, wz), Blocks.GRASS_BLOCK.getDefaultState(), 2);
+                if (old < y - 7 && ((x + r) % 5 == 0 || (z + r) % 5 == 0)) {
+                    for (int yy = y - 1; yy >= Math.max(old, y - 40); yy--) {
+                        BlockState state = world.getBlockState(m.set(wx, yy, wz));
+                        if (!state.isAir() && state.getFluidState().isEmpty()) break;
                         world.setBlockState(m, p.wall.getDefaultState(), 2);
                     }
                 }
@@ -150,41 +164,77 @@ public final class MedievalKingdoms {
     }
 
     private static void buildRoads(ServerWorld w, BlockPos c, Palette p) {
-        for (int i = -40; i <= 40; i++) {
+        for (int i = -66; i <= 66; i++) {
             for (int d = -2; d <= 2; d++) {
                 set(w, c.add(d, 0, i), p.road);
                 set(w, c.add(i, 0, d), p.road);
             }
         }
-        for (int i = -36; i <= 36; i++) {
-            set(w, c.add(i, 0, 18), p.road);
-            set(w, c.add(i, 0, 19), p.road);
+        int[] rings = {-52, 52};
+        for (int z : rings) for (int i = -62; i <= 62; i++) {
+            set(w, c.add(i, 0, z), p.road);
+            set(w, c.add(z, 0, i), p.road);
         }
-        for (int x = -6; x <= 6; x++) for (int z = 15; z <= 29; z++) set(w, c.add(x, 0, z), p.trim);
+        for (int x = -7; x <= 7; x++) for (int z = 14; z <= 30; z++) set(w, c.add(x, 0, z), p.trim);
     }
 
-    private static void buildOuterWall(ServerWorld w, BlockPos c, Palette p) {
-        int r = 44;
+    private static void buildInnerWall(ServerWorld w, BlockPos c, Palette p) {
+        buildSquareWall(w, c, p, 42, 8);
+        buildTower(w, c.add(-40, 0, -40), p, 13);
+        buildTower(w, c.add(40, 0, -40), p, 13);
+        buildTower(w, c.add(-40, 0, 40), p, 13);
+        buildTower(w, c.add(40, 0, 40), p, 13);
+    }
+
+    private static void buildOuterCityWall(ServerWorld w, BlockPos c, Palette p) {
+        buildSquareWall(w, c, p, 68, 10);
+        int t = 66;
+        buildTower(w, c.add(-t, 0, -t), p, 16);
+        buildTower(w, c.add(t, 0, -t), p, 16);
+        buildTower(w, c.add(-t, 0, t), p, 16);
+        buildTower(w, c.add(t, 0, t), p, 16);
+        buildTower(w, c.add(0, 0, -67), p, 14);
+        buildTower(w, c.add(-67, 0, 0), p, 14);
+        buildTower(w, c.add(67, 0, 0), p, 14);
+        for (int x = -60; x <= 60; x += 10) {
+            lanternPost(w, c.add(x, 1, -64), p);
+            lanternPost(w, c.add(x, 1, 64), p);
+        }
+    }
+
+    private static void buildSquareWall(ServerWorld w, BlockPos c, Palette p, int r, int hMax) {
         for (int i = -r; i <= r; i++) {
-            for (int h = 1; h <= 8; h++) {
-                if (!(Math.abs(i) <= 4 && h <= 5)) set(w, c.add(i, h, r), p.wall);
+            for (int h = 1; h <= hMax; h++) {
+                boolean southGate = Math.abs(i) <= 4 && h <= 6;
+                if (!southGate) set(w, c.add(i, h, r), p.wall);
                 set(w, c.add(i, h, -r), p.wall);
                 set(w, c.add(r, h, i), p.wall);
                 set(w, c.add(-r, h, i), p.wall);
             }
-            if (i % 2 == 0) {
-                set(w, c.add(i, 9, r), p.trim); set(w, c.add(i, 9, -r), p.trim);
-                set(w, c.add(r, 9, i), p.trim); set(w, c.add(-r, 9, i), p.trim);
+            if ((i & 1) == 0) {
+                set(w, c.add(i, hMax + 1, r), p.trim);
+                set(w, c.add(i, hMax + 1, -r), p.trim);
+                set(w, c.add(r, hMax + 1, i), p.trim);
+                set(w, c.add(-r, hMax + 1, i), p.trim);
             }
         }
-        buildTower(w, c.add(-42, 0, -42), p, 13);
-        buildTower(w, c.add(42, 0, -42), p, 13);
-        buildTower(w, c.add(-42, 0, 42), p, 13);
-        buildTower(w, c.add(42, 0, 42), p, 13);
-        for (int x = -38; x <= 38; x += 8) {
-            lanternPost(w, c.add(x, 1, -40), p);
-            lanternPost(w, c.add(x, 1, 40), p);
-        }
+    }
+
+    private static void buildInnerGatehouse(ServerWorld w, BlockPos c, Palette p) {
+        buildGatehouse(w, c.add(0, 0, 40), p, 11);
+    }
+
+    private static void buildOuterGatehouse(ServerWorld w, BlockPos c, Palette p) {
+        buildGatehouse(w, c.add(0, 0, 66), p, 15);
+    }
+
+    private static void buildGatehouse(ServerWorld w, BlockPos g, Palette p, int height) {
+        buildTower(w, g.add(-9, 0, 0), p, height);
+        buildTower(w, g.add(9, 0, 0), p, height);
+        for (int x = -4; x <= 4; x++) for (int y = 7; y <= height; y++) set(w, g.add(x, y, 0), p.wall);
+        for (int x = -3; x <= 3; x++) for (int y = 1; y <= 6; y++) set(w, g.add(x, y, 0), Blocks.AIR);
+        for (int x = -5; x <= 5; x++) set(w, g.add(x, height + 1, 0), p.trim);
+        set(w, g.add(0, height - 2, 1), p.accent);
     }
 
     private static void buildTower(ServerWorld w, BlockPos c, Palette p, int height) {
@@ -192,12 +242,11 @@ public final class MedievalKingdoms {
         for (int y = 1; y <= height; y++) {
             for (int x = -r; x <= r; x++) for (int z = -r; z <= r; z++) {
                 boolean edge = Math.abs(x) == r || Math.abs(z) == r;
-                if (edge) set(w, c.add(x, y, z), (y % 5 == 0 ? p.trim : p.wall));
-                else set(w, c.add(x, y, z), Blocks.AIR);
+                set(w, c.add(x, y, z), edge ? (y % 5 == 0 ? p.trim : p.wall) : Blocks.AIR);
             }
         }
         for (int x = -r; x <= r; x++) for (int z = -r; z <= r; z++) {
-            if (Math.abs(x) == r || Math.abs(z) == r || (Math.abs(x) <= 2 && Math.abs(z) <= 2)) set(w, c.add(x, height + 1, z), p.trim);
+            if (Math.abs(x) == r || Math.abs(z) == r) set(w, c.add(x, height + 1, z), p.trim);
         }
         for (int x = -r; x <= r; x += 2) {
             set(w, c.add(x, height + 2, -r), p.wall); set(w, c.add(x, height + 2, r), p.wall);
@@ -207,96 +256,45 @@ public final class MedievalKingdoms {
         }
     }
 
-    private static void buildGatehouse(ServerWorld w, BlockPos c, Palette p) {
-        BlockPos g = c.add(0, 0, 41);
-        buildTower(w, g.add(-8, 0, 0), p, 12);
-        buildTower(w, g.add(8, 0, 0), p, 12);
-        for (int x = -4; x <= 4; x++) for (int y = 6; y <= 11; y++) set(w, g.add(x, y, 0), p.wall);
-        for (int x = -3; x <= 3; x++) for (int y = 1; y <= 5; y++) set(w, g.add(x, y, 0), Blocks.AIR);
-        for (int x = -4; x <= 4; x++) set(w, g.add(x, 12, 0), p.trim);
-        set(w, g.add(0, 10, 1), p.accent);
-    }
-
-    private static void buildKeep(ServerWorld w, BlockPos c, Palette p, String nationName) {
-        int rx = 15, rz = 12;
-        for (int y = 1; y <= 22; y++) {
-            for (int x = -rx; x <= rx; x++) for (int z = -rz; z <= rz; z++) {
-                boolean edge = Math.abs(x) == rx || Math.abs(z) == rz;
-                if (edge) {
-                    boolean window = (y == 6 || y == 13 || y == 19) && ((Math.abs(x) % 5 == 0) || (Math.abs(z) % 5 == 0));
-                    set(w, c.add(x, y, z), window ? Blocks.GLASS_PANE : (y % 7 == 0 ? p.trim : p.wall));
-                } else {
-                    set(w, c.add(x, y, z), Blocks.AIR);
-                }
-            }
-        }
-        for (int x = -rx + 1; x < rx; x++) for (int z = -rz + 1; z < rz; z++) {
-            set(w, c.add(x, 1, z), p.wood);
+    private static void buildKeep(ServerWorld w, BlockPos c, Palette p) {
+        building(w, c, 15, 12, 20, p.wall, p.trim, p.roof);
+        for (int x = -13; x <= 13; x++) for (int z = -10; z <= 10; z++) {
             set(w, c.add(x, 8, z), p.wood);
             set(w, c.add(x, 15, z), p.wood);
         }
-        // Three-floor throne keep with central stair-like stepped ascent.
-        for (int i = 0; i < 12; i++) {
-            set(w, c.add(-11 + i, 2 + i / 2, 7), p.trim);
-            set(w, c.add(-11 + i, 2 + i / 2, 8), p.trim);
+        for (int i = 0; i < 11; i++) {
+            set(w, c.add(-10 + i, 2 + i / 2, 7), p.trim);
+            set(w, c.add(-10 + i, 2 + i / 2, 8), p.trim);
         }
-        for (int x = -rx; x <= rx; x++) for (int z = -rz; z <= rz; z++) set(w, c.add(x, 23, z), p.roof);
-        for (int x = -rx; x <= rx; x += 2) {
-            set(w, c.add(x, 24, -rz), p.wall); set(w, c.add(x, 24, rz), p.wall);
-        }
-        for (int z = -rz; z <= rz; z += 2) {
-            set(w, c.add(-rx, 24, z), p.wall); set(w, c.add(rx, 24, z), p.wall);
-        }
-        // Front portal and throne.
-        for (int x = -2; x <= 2; x++) for (int y = 2; y <= 6; y++) set(w, c.add(x, y, rz), Blocks.AIR);
-        for (int y = 2; y <= 6; y++) { set(w, c.add(-3, y, rz), p.trim); set(w, c.add(3, y, rz), p.trim); }
         set(w, c.add(0, 2, -8), p.accent);
         set(w, c.add(0, 3, -8), Blocks.OAK_STAIRS);
         set(w, c.add(0, 4, -9), p.accent);
-        // Chandeliers.
-        for (int z = -5; z <= 5; z += 10) {
-            set(w, c.add(0, 20, z), Blocks.CHAIN);
-            set(w, c.add(0, 19, z), Blocks.CHAIN);
-            set(w, c.add(0, 18, z), Blocks.LANTERN);
-        }
-        // Treasury chests on second floor.
+        set(w, c.add(0, 18, 0), Blocks.LANTERN);
         treasure(w, c.add(-10, 9, -8));
         treasure(w, c.add(10, 9, -8));
     }
 
-    private static void buildBarracks(ServerWorld w, BlockPos c, Palette p) {
-        building(w, c, 11, 8, 7, p.wall, p.wood, p.roof);
-        for (int i = -7; i <= 7; i += 4) {
-            set(w, c.add(i, 2, -4), Blocks.WHITE_BED);
-            set(w, c.add(i, 2, 4), Blocks.WHITE_BED);
-        }
-        set(w, c.add(0, 2, 0), Blocks.SMITHING_TABLE);
-        set(w, c.add(2, 2, 0), Blocks.ANVIL);
-    }
-
     private static void buildChapel(ServerWorld w, BlockPos c, Palette p) {
         building(w, c, 10, 7, 10, p.wall, p.trim, p.roof);
-        for (int y = 11; y <= 18; y++) {
-            int shrink = (y - 11) / 2;
-            for (int x = -3 + shrink; x <= 3 - shrink; x++) set(w, c.add(x, y, 0), p.trim);
-        }
-        set(w, c.add(0, 6, -7), Blocks.GLASS_PANE);
         set(w, c.add(0, 3, 0), p.accent);
         set(w, c.add(0, 4, 0), Blocks.CANDLE);
     }
 
     private static void buildMarket(ServerWorld w, BlockPos c, Palette p) {
         for (int x = -15; x <= 15; x += 10) for (int z = -5; z <= 5; z += 10) {
-            for (int dx = -3; dx <= 3; dx++) for (int dz = -2; dz <= 2; dz++) set(w, c.add(x + dx, 1, z + dz), Blocks.OAK_PLANKS);
-            for (int dx : new int[]{-3, 3}) for (int dz : new int[]{-2, 2}) {
-                set(w, c.add(x + dx, 2, z + dz), Blocks.OAK_FENCE);
-                set(w, c.add(x + dx, 3, z + dz), Blocks.OAK_FENCE);
-            }
-            for (int dx = -3; dx <= 3; dx++) for (int dz = -2; dz <= 2; dz++) set(w, c.add(x + dx, 4, z + dz), ((dx + dz) & 1) == 0 ? Blocks.RED_WOOL : Blocks.WHITE_WOOL);
-            set(w, c.add(x, 2, z), Blocks.BARREL);
+            stall(w, c.add(x, 0, z), ((x + z) & 1) == 0 ? Blocks.RED_WOOL : Blocks.BLUE_WOOL);
         }
-        set(w, c.add(0, 1, 0), p.accent);
-        lanternPost(w, c.add(-18, 1, 0), p); lanternPost(w, c.add(18, 1, 0), p);
+        lanternPost(w, c.add(-18, 1, 0), p);
+        lanternPost(w, c.add(18, 1, 0), p);
+    }
+
+    private static void stall(ServerWorld w, BlockPos c, Block cloth) {
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -2; dz <= 2; dz++) set(w, c.add(dx, 1, dz), Blocks.OAK_PLANKS);
+        for (int dx : new int[]{-3, 3}) for (int dz : new int[]{-2, 2}) {
+            set(w, c.add(dx, 2, dz), Blocks.OAK_FENCE); set(w, c.add(dx, 3, dz), Blocks.OAK_FENCE);
+        }
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -2; dz <= 2; dz++) set(w, c.add(dx, 4, dz), cloth);
+        set(w, c.add(0, 2, 0), Blocks.BARREL);
     }
 
     private static void buildStables(ServerWorld w, BlockPos c, Palette p) {
@@ -309,13 +307,56 @@ public final class MedievalKingdoms {
         set(w, c.add(7, 2, 0), Blocks.HAY_BLOCK);
     }
 
-    private static void buildHouses(ServerWorld w, BlockPos c, Palette p) {
-        int[][] spots = {{-30,24},{-20,31},{20,31},{30,24},{-33,8},{33,8},{-33,-28},{33,-28}};
+    private static void buildGuildHall(ServerWorld w, BlockPos c, Palette p, boolean knights) {
+        building(w, c, 10, 8, 8, p.wall, p.wood, p.roof);
+        for (int x = -7; x <= 7; x += 4) {
+            set(w, c.add(x, 2, -5), knights ? Blocks.BLUE_BED : Blocks.RED_BED);
+            set(w, c.add(x, 2, 5), knights ? Blocks.BLUE_BED : Blocks.RED_BED);
+        }
+        set(w, c.add(0, 2, 0), knights ? Blocks.SMITHING_TABLE : Blocks.CARTOGRAPHY_TABLE);
+        set(w, c.add(2, 2, 0), Blocks.ANVIL);
+        set(w, c.add(-2, 2, 0), Blocks.BARREL);
+        set(w, c.add(0, 6, 0), knights ? Blocks.BLUE_BANNER : Blocks.RED_BANNER);
+    }
+
+    private static void buildTavern(ServerWorld w, BlockPos c, Palette p) {
+        building(w, c, 9, 7, 7, Blocks.COBBLESTONE, p.wood, p.roof);
+        for (int x = -5; x <= 5; x += 5) {
+            set(w, c.add(x, 2, 0), Blocks.OAK_FENCE);
+            set(w, c.add(x, 3, 0), Blocks.OAK_PRESSURE_PLATE);
+        }
+        set(w, c.add(0, 2, -4), Blocks.BARREL);
+        set(w, c.add(2, 2, -4), Blocks.SMOKER);
+        set(w, c.add(-2, 2, -4), Blocks.BREWING_STAND);
+    }
+
+    private static void buildSmithy(ServerWorld w, BlockPos c, Palette p) {
+        building(w, c, 9, 7, 7, Blocks.STONE_BRICKS, p.wood, p.roof);
+        set(w, c.add(-3, 2, 0), Blocks.BLAST_FURNACE);
+        set(w, c.add(0, 2, 0), Blocks.ANVIL);
+        set(w, c.add(3, 2, 0), Blocks.SMITHING_TABLE);
+        set(w, c.add(0, 2, -4), Blocks.LAVA_CAULDRON);
+    }
+
+    private static void buildOuterVillage(ServerWorld w, BlockPos c, Palette p) {
+        int[][] spots = {
+            {-54,45},{-36,54},{-15,54},{15,54},{36,54},{54,45},
+            {-54,5},{54,5},{-54,-45},{-36,-54},{-15,-54},{15,-54},{36,-54},{54,-45}
+        };
         for (int i = 0; i < spots.length; i++) {
             BlockPos h = c.add(spots[i][0], 0, spots[i][1]);
             building(w, h, 6, 5, 5 + (i % 2), Blocks.COBBLESTONE, p.wood, p.roof);
-            set(w, h.add(0, 2, 0), i % 3 == 0 ? Blocks.CRAFTING_TABLE : (i % 3 == 1 ? Blocks.BARREL : Blocks.LOOM));
-            set(w, h.add(3, 2, -4), Blocks.LANTERN);
+            Block work = switch (i % 6) {
+                case 0 -> Blocks.LOOM;
+                case 1 -> Blocks.BARREL;
+                case 2 -> Blocks.FLETCHING_TABLE;
+                case 3 -> Blocks.COMPOSTER;
+                case 4 -> Blocks.CRAFTING_TABLE;
+                default -> Blocks.STONECUTTER;
+            };
+            set(w, h.add(0, 2, 0), work);
+            set(w, h.add(3, 2, -3), Blocks.LANTERN);
+            set(w, h.add(-2, 2, 2), i % 2 == 0 ? Blocks.WHITE_BED : Blocks.BROWN_BED);
         }
     }
 
@@ -330,7 +371,67 @@ public final class MedievalKingdoms {
             } else set(w, c.add(x, y, z), Blocks.AIR);
         }
         for (int x = -rx - 1; x <= rx + 1; x++) for (int z = -rz - 1; z <= rz + 1; z++) set(w, c.add(x, height + 1, z), roof);
-        set(w, c.add(0, 2, rz), Blocks.AIR); set(w, c.add(0, 3, rz), Blocks.AIR);
+        set(w, c.add(0, 2, rz), Blocks.AIR);
+        set(w, c.add(0, 3, rz), Blocks.AIR);
+    }
+
+    private static void spawnFantasyCitizens(ServerWorld world, BlockPos c, Nation n) {
+        String[] roles = {
+            "왕실 시종","궁정 서기관","재무관","왕실 사제","왕실 요리사","왕궁 하인",
+            "기사단장","기사 부단장","왕실 기사","왕실 기사","기사 교관","기사 보급관",
+            "용병단장","베테랑 용병","베테랑 용병","정찰 용병","용병 접수원","현상금 담당관",
+            "여관주인","주방장","음유시인","대장장이","갑옷 장인","도구 장인",
+            "시장 상인","약초상","빵집 주인","직물 상인","지도 제작자","가죽 장인",
+            "농부","농부","석공","어부","마구간지기","마을 촌장",
+            "주민","주민","주민","주민","주민","주민"
+        };
+        int[][] pos = {
+            {-4,-9},{4,-9},{-5,-2},{-25,-12},{2,-12},{-2,-4},
+            {-54,-22},{-51,-22},{-57,-18},{-51,-18},{-57,-26},{-51,-26},
+            {54,-22},{51,-22},{57,-18},{51,-18},{57,-26},{51,-26},
+            {-54,20},{-51,20},{-57,23},{54,20},{51,20},{57,20},
+            {-10,22},{0,22},{10,22},{-15,27},{15,27},{20,22},
+            {-54,45},{-36,54},{-15,54},{15,54},{36,54},{54,45},
+            {-54,5},{54,5},{-54,-45},{-36,-54},{36,-54},{54,-45}
+        };
+        VillagerProfession[] jobs = {
+            VillagerProfession.LIBRARIAN, VillagerProfession.LIBRARIAN, VillagerProfession.CARTOGRAPHER, VillagerProfession.CLERIC, VillagerProfession.BUTCHER, VillagerProfession.FARMER,
+            VillagerProfession.WEAPONSMITH, VillagerProfession.ARMORER, VillagerProfession.WEAPONSMITH, VillagerProfession.ARMORER, VillagerProfession.WEAPONSMITH, VillagerProfession.TOOLSMITH,
+            VillagerProfession.WEAPONSMITH, VillagerProfession.LEATHERWORKER, VillagerProfession.FLETCHER, VillagerProfession.FLETCHER, VillagerProfession.CARTOGRAPHER, VillagerProfession.LIBRARIAN,
+            VillagerProfession.BUTCHER, VillagerProfession.FARMER, VillagerProfession.LIBRARIAN, VillagerProfession.WEAPONSMITH, VillagerProfession.ARMORER, VillagerProfession.TOOLSMITH,
+            VillagerProfession.CARTOGRAPHER, VillagerProfession.CLERIC, VillagerProfession.FARMER, VillagerProfession.SHEPHERD, VillagerProfession.CARTOGRAPHER, VillagerProfession.LEATHERWORKER,
+            VillagerProfession.FARMER, VillagerProfession.FARMER, VillagerProfession.MASON, VillagerProfession.FISHERMAN, VillagerProfession.LEATHERWORKER, VillagerProfession.CARTOGRAPHER,
+            VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE
+        };
+
+        for (int i = 0; i < roles.length; i++) {
+            VillagerEntity v = EntityType.VILLAGER.create(world);
+            if (v == null) continue;
+            v.setVillagerData(v.getVillagerData().withType(VillagerType.PLAINS).withProfession(jobs[i]).withLevel(5));
+            double px = c.getX() + pos[i][0] + 0.5;
+            double pz = c.getZ() + pos[i][1] + 0.5;
+            v.refreshPositionAndAngles(px, c.getY() + 2, pz, world.random.nextFloat() * 360f, 0f);
+            v.setCustomName(Text.literal("§6[" + n.name + "] §f" + roles[i]));
+            v.setCustomNameVisible(i < 18);
+            v.setPersistent();
+            v.addCommandTag("crown018_npc");
+            v.addCommandTag("crown018_" + n.id);
+            if (i >= 6 && i <= 17) {
+                v.equipStack(EquipmentSlot.HEAD, new ItemStack(i <= 11 ? Items.IRON_HELMET : Items.CHAINMAIL_HELMET));
+            } else if (i < 6) {
+                v.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.GOLDEN_HELMET));
+            } else if (i % 4 == 0) {
+                v.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET));
+            }
+            world.spawnEntity(v);
+        }
+    }
+
+    private static void clearOldPatchNpcs(ServerWorld world, BlockPos c) {
+        Box area = new Box(c.add(-80, -10, -80), c.add(80, 40, 80));
+        for (VillagerEntity v : world.getEntitiesByClass(VillagerEntity.class, area, e -> e.getCommandTags().contains("crown018_npc"))) {
+            v.discard();
+        }
     }
 
     private static void lanternPost(ServerWorld w, BlockPos base, Palette p) {
@@ -340,10 +441,8 @@ public final class MedievalKingdoms {
         set(w, base.up(3), Blocks.LANTERN);
     }
 
-    private static void placeMarker(ServerWorld w, BlockPos c, Palette p) {
-        set(w, c.add(0, 1, 38), Blocks.LODESTONE);
-        set(w, c.add(-1, 1, 38), p.accent);
-        set(w, c.add(1, 1, 38), p.accent);
+    private static void placeMarker(ServerWorld w, BlockPos c) {
+        set(w, c.down(), Blocks.LODESTONE);
     }
 
     private static void treasure(ServerWorld w, BlockPos pos) {
@@ -355,34 +454,6 @@ public final class MedievalKingdoms {
             chest.setStack(3, new ItemStack(Items.GOLDEN_APPLE, 2));
             chest.setStack(4, new ItemStack(Items.DIAMOND, 3));
             chest.markDirty();
-        }
-    }
-
-    private static void spawnFantasyCitizens(ServerWorld world, BlockPos c, Nation n) {
-        String[] roles = {"왕실 시종","대장장이","갑옷 장인","여관주인","상인","사제","서기관","농부","약초상","마구간지기","귀족","빵집 주인","석공","경비 보급관"};
-        VillagerProfession[] jobs = {VillagerProfession.LIBRARIAN, VillagerProfession.WEAPONSMITH, VillagerProfession.ARMORER, VillagerProfession.BUTCHER,
-            VillagerProfession.CARTOGRAPHER, VillagerProfession.CLERIC, VillagerProfession.LIBRARIAN, VillagerProfession.FARMER,
-            VillagerProfession.CLERIC, VillagerProfession.LEATHERWORKER, VillagerProfession.CARTOGRAPHER, VillagerProfession.FARMER,
-            VillagerProfession.MASON, VillagerProfession.TOOLSMITH};
-        int[][] pos = {{-4,9},{4,9},{27,-10},{2,22},{-8,22},{-27,-10},{-5,-3},{-30,24},{-20,31},{28,22},{5,-10},{20,31},{33,8},{12,4}};
-        for (int i = 0; i < roles.length; i++) {
-            VillagerEntity v = EntityType.VILLAGER.create(world);
-            if (v == null) continue;
-            v.setVillagerData(v.getVillagerData().withType(VillagerType.PLAINS).withProfession(jobs[i]).withLevel(5));
-            v.refreshPositionAndAngles(c.getX() + pos[i][0] + 0.5, c.getY() + 2, c.getZ() + pos[i][1] + 0.5, world.random.nextFloat() * 360f, 0f);
-            v.setCustomName(Text.literal("§6[" + n.name + "] §f" + roles[i]));
-            v.setCustomNameVisible(i <= 5);
-            v.setPersistent();
-            // Visible fantasy headgear using vanilla assets keeps E-key/inventory rendering stable.
-            ItemStack head = switch (i % 5) {
-                case 0 -> new ItemStack(Items.GOLDEN_HELMET);
-                case 1 -> new ItemStack(Items.IRON_HELMET);
-                case 2 -> new ItemStack(Items.CHAINMAIL_HELMET);
-                case 3 -> new ItemStack(Items.LEATHER_HELMET);
-                default -> ItemStack.EMPTY;
-            };
-            if (!head.isEmpty()) v.equipStack(EquipmentSlot.HEAD, head);
-            world.spawnEntity(v);
         }
     }
 
