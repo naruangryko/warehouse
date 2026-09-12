@@ -34,7 +34,7 @@ import net.minecraft.registry.Registry;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.ScreenHandlerType;
 import net.minecraft.screen.SimpleNamedScreenHandlerFactory;
-import net.minecraft.screen.slot.ClickType;
+import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
@@ -126,7 +126,8 @@ public final class Safe025 implements ModInitializer {
                                 int done = 0;
                                 for (int i = 0; i < amount; i++) if (spendPoint(p, stat, false)) done++; else break;
                                 if (done <= 0) return 0;
-                                ctx.getSource().sendFeedback(() -> Text.literal("§a" + stat + " §f+" + done + "회 강화"), false);
+                                int applied = done;
+                                ctx.getSource().sendFeedback(() -> Text.literal("§a" + stat + " §f+" + applied + "회 강화"), false);
                                 return 1;
                             })))));
 
@@ -377,7 +378,7 @@ public final class Safe025 implements ModInitializer {
             menu.setStack(2, named(Items.IRON_SWORD, "§b기사 §7- 공격력·체력 특화"));
             menu.setStack(6, named(Items.BLAZE_ROD, "§d마법사 §7- 마력·치확·치피 특화"));
         }
-        @Override public void onSlotClick(int slotIndex, int button, ClickType actionType, PlayerEntity clicker) {
+        @Override public void onSlotClick(int slotIndex, int button, SlotActionType actionType, PlayerEntity clicker) {
             if (slotIndex == 2) chooseJob(player, "knight");
             else if (slotIndex == 6) chooseJob(player, "mage");
             else if (slotIndex >= 0 && slotIndex < 9) return;
@@ -402,7 +403,7 @@ public final class Safe025 implements ModInitializer {
             menu.setStack(16, named(Items.RABBIT_FOOT, "§2스태미나 §f" + getStat(player,"stamina") + " §7[클릭 +1]"));
             menu.setStack(22, named(Items.AMETHYST_SHARD, "§d마력 §f" + getStat(player,"mana") + " §7[클릭 +1]"));
         }
-        @Override public void onSlotClick(int slotIndex, int button, ClickType actionType, PlayerEntity clicker) {
+        @Override public void onSlotClick(int slotIndex, int button, SlotActionType actionType, PlayerEntity clicker) {
             String stat = switch (slotIndex) {
                 case 10 -> "attack"; case 11 -> "health"; case 12 -> "defense"; case 13 -> "critchance";
                 case 14 -> "critdamage"; case 15 -> "speed"; case 16 -> "stamina"; case 22 -> "mana"; default -> null;
@@ -479,8 +480,8 @@ public final class Safe025 implements ModInitializer {
         }
         String f = statField(stat);
         if (f == null) throw new IllegalArgumentException(stat);
-        Field field = field(progress, f);
-        field.setInt(progress, Math.min(10000, field.getInt(progress) + amount));
+        Field ff = field(progress, f);
+        ff.setInt(progress, Math.min(10000, ff.getInt(progress) + amount));
     }
 
     private static void addRawStat(ServerPlayerEntity p, String stat, int amount) {
@@ -648,7 +649,7 @@ public final class Safe025 implements ModInitializer {
             String mob=regionMonster(world,pos); boolean special=mob!=null; if(!night&&!special)return;
             if(mob==null){String[]pool={"goblin","orc","skeleton_knight","werewolf"};mob=pool[world.random.nextInt(pool.length)];}
             if(!special&&world.getLightLevel(pos)>7)return; if(!world.getBlockState(pos).isAir()||!world.getBlockState(pos.up()).isAir()||world.getBlockState(pos.down()).isAir())return;
-            Identifier id=new Identifier("crowncinder",mob); if(!Registries.ENTITY_TYPE.containsId(id))return; EntityType<?> type=Registries.ENTITY_TYPE.get(id); Entity e=type.create(world); if(!(e instanceof MobEntity m))return;
+            Identifier iid=new Identifier("crowncinder",mob); if(!Registries.ENTITY_TYPE.containsId(iid))return; EntityType<?> type=Registries.ENTITY_TYPE.get(iid); Entity e=type.create(world); if(!(e instanceof MobEntity m))return;
             m.refreshPositionAndAngles(x+.5,y,z+.5,world.random.nextFloat()*360,0); if(world.isSpaceEmpty(m))world.spawnEntity(m);
         } catch(Throwable ignored){}
     }
