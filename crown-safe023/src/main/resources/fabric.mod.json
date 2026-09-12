@@ -2,14 +2,15 @@
   "schemaVersion": 1,
   "id": "crowncinder023safe",
   "version": "${version}",
-  "name": "Crown & Cinder 0.23 Safe",
-  "description": "Crash-safe magic, stats, milestone growth and natural spawning addon for Crown & Cinder 0.22.",
+  "name": "Crown & Cinder 0.24 Safe",
+  "description": "Crash-safe magic selection, enhanced staff visuals, milestone growth, natural spawning and kingdom height correction for Crown & Cinder 0.22.",
   "authors": ["Crown & Cinder Project"],
   "license": "All Rights Reserved",
   "environment": "*",
   "entrypoints": {
     "main": ["dev.crowncindersafe.Safe023"]
   },
+  "mixins": ["crowncinder024safe.mixins.json"],
   "depends": {
     "fabricloader": ">=0.15.11",
     "fabric-api": "*",
