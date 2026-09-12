@@ -28,11 +28,12 @@ public final class CrownCinderPatch implements ModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
             server.execute(() -> {
-                boolean built = OneCapitalCoordinator.ensure020(player.getServerWorld());
+                boolean built = OneCapitalCoordinator.ensure021(player.getServerWorld());
                 RpgProgressBridge.refreshCombatStats(player);
                 OneCapitalCoordinator.placePlayerAtSafeSpawn(player, built);
+                StarterKit021.giveOnce(player);
                 if (built) {
-                    player.sendMessage(Text.literal("§a[Crown & Cinder] §f왕국과 모든 왕·기사·용병·주민 NPC가 자동 배치되었습니다."), false);
+                    player.sendMessage(Text.literal("§a[Crown & Cinder 0.21] §f3층 왕궁·황실 수호기사·내성 기사 20명·외성 기사 40명과 모든 주민 NPC가 배치되었습니다."), false);
                 }
             });
         });
@@ -74,7 +75,6 @@ public final class CrownCinderPatch implements ModInitializer {
                 return 1;
             }));
 
-            // /rpg stats up <stat> <amount>
             root.then(CommandManager.literal("stats").requires(s -> s.hasPermissionLevel(2))
                 .then(CommandManager.literal("up")
                     .then(CommandManager.argument("stat", StringArgumentType.word())
@@ -103,7 +103,7 @@ public final class CrownCinderPatch implements ModInitializer {
             var city = CommandManager.literal("city").requires(s -> s.hasPermissionLevel(2));
             city.executes(ctx -> {
                 int npcs = OneCapitalCoordinator.rebuildAll(ctx.getSource().getWorld());
-                ctx.getSource().sendFeedback(() -> Text.literal("§a6개 지상 왕국 재건 완료 · NPC " + npcs + "명 자동 배치"), true);
+                ctx.getSource().sendFeedback(() -> Text.literal("§a6개 0.21 왕국 재건 완료 · 주민 NPC " + npcs + "명 + 기사단 자동 배치"), true);
                 return 1;
             });
             city.then(CommandManager.argument("nation", StringArgumentType.word()).executes(ctx -> {
@@ -113,7 +113,7 @@ public final class CrownCinderPatch implements ModInitializer {
                     ctx.getSource().sendError(Text.literal("국가: " + MedievalKingdoms.nationList()));
                     return 0;
                 }
-                ctx.getSource().sendFeedback(() -> Text.literal("§a" + id + " 재건 완료 · NPC " + npcs + "명 자동 배치"), true);
+                ctx.getSource().sendFeedback(() -> Text.literal("§a" + id + " 0.21 왕궁/기사단 재건 완료"), true);
                 return 1;
             }));
             root.then(city);
@@ -127,9 +127,11 @@ public final class CrownCinderPatch implements ModInitializer {
                         return 0;
                     }
                     ServerPlayerEntity p = ctx.getSource().getPlayer();
-                    MedievalKingdoms.rebuild(ctx.getSource().getWorld(), p.getBlockPos(), nation);
-                    int npcs = NpcBootstrap020.respawnOne(ctx.getSource().getWorld(), id);
-                    ctx.getSource().sendFeedback(() -> Text.literal("§a현재 위치에 " + nation.name() + " 생성 · NPC " + npcs + "명 자동 배치"), true);
+                    var rough = p.getBlockPos();
+                    MedievalKingdoms.rebuild(ctx.getSource().getWorld(), rough, nation);
+                    RoyalInterior021.decorate(ctx.getSource().getWorld(), rough, nation);
+                    MilitaryBootstrap021.populate(ctx.getSource().getWorld(), rough, nation);
+                    ctx.getSource().sendFeedback(() -> Text.literal("§a현재 위치에 " + nation.name() + " 0.21 왕궁과 기사단 생성"), true);
                     return 1;
                 })));
 
