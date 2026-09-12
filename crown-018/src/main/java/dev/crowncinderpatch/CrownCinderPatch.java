@@ -32,7 +32,7 @@ public final class CrownCinderPatch implements ModInitializer {
                 RpgProgressBridge.refreshCombatStats(player);
                 OneCapitalCoordinator.placePlayerAtSafeSpawn(player, built);
                 if (built) {
-                    player.sendMessage(Text.literal("§a[Crown & Cinder 0.20] §f왕국을 지표면 위에 다시 만들고 왕·기사단·용병단·주민 NPC를 배치했습니다."), false);
+                    player.sendMessage(Text.literal("§a[Crown & Cinder] §f왕국과 모든 왕·기사·용병·주민 NPC가 자동 배치되었습니다."), false);
                 }
             });
         });
@@ -40,7 +40,6 @@ public final class CrownCinderPatch implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             var root = CommandManager.literal("rpg");
 
-            // /rpg lv 50 : exact level
             root.then(CommandManager.literal("lv").requires(s -> s.hasPermissionLevel(2))
                 .then(CommandManager.argument("level", IntegerArgumentType.integer(1, 100)).executes(ctx -> {
                     ServerPlayerEntity p = ctx.getSource().getPlayer();
@@ -50,7 +49,6 @@ public final class CrownCinderPatch implements ModInitializer {
                     return 1;
                 })));
 
-            // /rpg xp 5000
             root.then(CommandManager.literal("xp").requires(s -> s.hasPermissionLevel(2))
                 .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 1_000_000)).executes(ctx -> {
                     ServerPlayerEntity p = ctx.getSource().getPlayer();
@@ -60,7 +58,6 @@ public final class CrownCinderPatch implements ModInitializer {
                     return 1;
                 })));
 
-            // /rpg pt 100 : add points
             root.then(CommandManager.literal("pt").requires(s -> s.hasPermissionLevel(2))
                 .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 1_000_000)).executes(ctx -> {
                     int add = IntegerArgumentType.getInteger(ctx, "amount");
@@ -77,31 +74,23 @@ public final class CrownCinderPatch implements ModInitializer {
                 return 1;
             }));
 
-            // /rpg str 50 : add strength quickly
-            root.then(CommandManager.literal("str").requires(s -> s.hasPermissionLevel(2))
-                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 10000)).executes(ctx -> {
-                    ServerPlayerEntity p = ctx.getSource().getPlayer();
-                    int now = RpgProgressBridge.addStat(p, "strength", IntegerArgumentType.getInteger(ctx, "amount"));
-                    RpgProgressBridge.refreshCombatStats(p);
-                    ctx.getSource().sendFeedback(() -> Text.literal("§c힘(STR) → " + now), false);
-                    return 1;
-                })));
-
-            // /rpg stat strength 100 : exact stat value
-            root.then(CommandManager.literal("stat").requires(s -> s.hasPermissionLevel(2))
-                .then(CommandManager.argument("stat", StringArgumentType.word())
-                    .then(CommandManager.argument("value", IntegerArgumentType.integer(0, 10000)).executes(ctx -> {
-                        ServerPlayerEntity p = ctx.getSource().getPlayer();
-                        String stat = StringArgumentType.getString(ctx, "stat");
-                        int now = RpgProgressBridge.setStat(p, stat, IntegerArgumentType.getInteger(ctx, "value"));
-                        if (now == Integer.MIN_VALUE) {
-                            ctx.getSource().sendError(Text.literal("스탯 예: strength, vitality, defense, agility, attackspeed, movespeed"));
-                            return 0;
-                        }
-                        RpgProgressBridge.refreshCombatStats(p);
-                        ctx.getSource().sendFeedback(() -> Text.literal("§a" + stat + " = " + now), false);
-                        return 1;
-                    }))));
+            // /rpg stats up <stat> <amount>
+            root.then(CommandManager.literal("stats").requires(s -> s.hasPermissionLevel(2))
+                .then(CommandManager.literal("up")
+                    .then(CommandManager.argument("stat", StringArgumentType.word())
+                        .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 10000)).executes(ctx -> {
+                            ServerPlayerEntity p = ctx.getSource().getPlayer();
+                            String stat = StringArgumentType.getString(ctx, "stat");
+                            int amount = IntegerArgumentType.getInteger(ctx, "amount");
+                            int now = RpgProgressBridge.addStat(p, stat, amount);
+                            if (now == Integer.MIN_VALUE) {
+                                ctx.getSource().sendError(Text.literal("스탯 예: strength, vitality, defense, agility, attackspeed, movespeed"));
+                                return 0;
+                            }
+                            RpgProgressBridge.refreshCombatStats(p);
+                            ctx.getSource().sendFeedback(() -> Text.literal("§a" + stat + " +" + amount + " → " + now), false);
+                            return 1;
+                        })))));
 
             root.then(CommandManager.literal("book").executes(ctx -> {
                 ServerPlayerEntity p = ctx.getSource().getPlayer();
@@ -111,11 +100,10 @@ public final class CrownCinderPatch implements ModInitializer {
                 return 1;
             }));
 
-            // /rpg city = all, /rpg city aurelia = one
             var city = CommandManager.literal("city").requires(s -> s.hasPermissionLevel(2));
             city.executes(ctx -> {
                 int npcs = OneCapitalCoordinator.rebuildAll(ctx.getSource().getWorld());
-                ctx.getSource().sendFeedback(() -> Text.literal("§a6개 지상 왕국 재건 완료 · NPC " + npcs + "명 배치"), true);
+                ctx.getSource().sendFeedback(() -> Text.literal("§a6개 지상 왕국 재건 완료 · NPC " + npcs + "명 자동 배치"), true);
                 return 1;
             });
             city.then(CommandManager.argument("nation", StringArgumentType.word()).executes(ctx -> {
@@ -125,12 +113,11 @@ public final class CrownCinderPatch implements ModInitializer {
                     ctx.getSource().sendError(Text.literal("국가: " + MedievalKingdoms.nationList()));
                     return 0;
                 }
-                ctx.getSource().sendFeedback(() -> Text.literal("§a" + id + " 재건 완료 · NPC " + npcs + "명 배치"), true);
+                ctx.getSource().sendFeedback(() -> Text.literal("§a" + id + " 재건 완료 · NPC " + npcs + "명 자동 배치"), true);
                 return 1;
             }));
             root.then(city);
 
-            // /rpg here aurelia
             root.then(CommandManager.literal("here").requires(s -> s.hasPermissionLevel(2))
                 .then(CommandManager.argument("nation", StringArgumentType.word()).executes(ctx -> {
                     String id = StringArgumentType.getString(ctx, "nation");
@@ -142,18 +129,10 @@ public final class CrownCinderPatch implements ModInitializer {
                     ServerPlayerEntity p = ctx.getSource().getPlayer();
                     MedievalKingdoms.rebuild(ctx.getSource().getWorld(), p.getBlockPos(), nation);
                     int npcs = NpcBootstrap020.respawnOne(ctx.getSource().getWorld(), id);
-                    ctx.getSource().sendFeedback(() -> Text.literal("§a현재 위치에 " + nation.name() + " 생성 · NPC " + npcs + "명"), true);
+                    ctx.getSource().sendFeedback(() -> Text.literal("§a현재 위치에 " + nation.name() + " 생성 · NPC " + npcs + "명 자동 배치"), true);
                     return 1;
                 })));
 
-            // /rpg npc : repair/populate all capital NPCs without rebuilding blocks
-            root.then(CommandManager.literal("npc").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
-                int npcs = NpcBootstrap020.respawnAll(ctx.getSource().getWorld());
-                ctx.getSource().sendFeedback(() -> Text.literal("§a왕·기사·용병·주민 NPC 재배치 완료: " + npcs + "명"), true);
-                return 1;
-            }));
-
-            // /rpg home : safe central plaza
             root.then(CommandManager.literal("home").executes(ctx -> {
                 OneCapitalCoordinator.placePlayerAtSafeSpawn(ctx.getSource().getPlayer(), true);
                 return 1;
