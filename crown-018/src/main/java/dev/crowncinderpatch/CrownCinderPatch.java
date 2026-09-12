@@ -11,7 +11,6 @@ import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
@@ -28,13 +27,12 @@ public final class CrownCinderPatch implements ModInitializer {
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
-            ServerWorld world = player.getServerWorld();
             server.execute(() -> {
+                boolean built = OneCapitalCoordinator.ensure020(player.getServerWorld());
                 RpgProgressBridge.refreshCombatStats(player);
-                if (!OneCapitalCoordinator.has019Marker(world) && world.getTime() <= 6000L) {
-                    player.sendMessage(Text.literal("§6[Crown & Cinder] §f기존 수도와 같은 위치를 정리한 뒤 지표면 위에 수도 하나만 건설합니다."), false);
-                    OneCapitalCoordinator.ensureFreshWorld(world);
-                    player.sendMessage(Text.literal("§a[Crown & Cinder] §f지상 단일 수도·이중 성벽·NPC 배치가 완료되었습니다."), false);
+                OneCapitalCoordinator.placePlayerAtSafeSpawn(player, built);
+                if (built) {
+                    player.sendMessage(Text.literal("§a[Crown & Cinder 0.20] §f왕국을 지표면 위에 다시 만들고 왕·기사단·용병단·주민 NPC를 배치했습니다."), false);
                 }
             });
         });
@@ -42,132 +40,98 @@ public final class CrownCinderPatch implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             var root = CommandManager.literal("rpg");
 
-            var level = CommandManager.literal("level");
-            level.then(CommandManager.literal("add")
-                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 100))
-                    .executes(ctx -> {
-                        ServerPlayerEntity p = ctx.getSource().getPlayer();
-                        int amount = IntegerArgumentType.getInteger(ctx, "amount");
-                        boolean integrated = RpgProgressBridge.addLevels(p, amount);
-                        RpgProgressBridge.feedback(p, "+" + amount + " 레벨 → Lv." + RpgProgressBridge.getLevel(p), integrated);
-                        return 1;
-                    })));
-            level.then(CommandManager.literal("set").requires(s -> s.hasPermissionLevel(2))
-                .then(CommandManager.argument("level", IntegerArgumentType.integer(1, 100))
-                    .executes(ctx -> {
-                        ServerPlayerEntity p = ctx.getSource().getPlayer();
-                        int target = IntegerArgumentType.getInteger(ctx, "level");
-                        boolean integrated = RpgProgressBridge.setLevel(p, target);
-                        RpgProgressBridge.feedback(p, "레벨을 " + target + "로 설정", integrated);
-                        return 1;
-                    })));
-            level.then(CommandManager.literal("max").requires(s -> s.hasPermissionLevel(2))
-                .executes(ctx -> {
+            // /rpg lv 50 : exact level
+            root.then(CommandManager.literal("lv").requires(s -> s.hasPermissionLevel(2))
+                .then(CommandManager.argument("level", IntegerArgumentType.integer(1, 100)).executes(ctx -> {
                     ServerPlayerEntity p = ctx.getSource().getPlayer();
-                    boolean integrated = RpgProgressBridge.setLevel(p, 100);
-                    RpgProgressBridge.feedback(p, "최대 레벨 Lv.100", integrated);
-                    return 1;
-                }));
-            level.then(CommandManager.literal("item")
-                .executes(ctx -> {
-                    ServerPlayerEntity p = ctx.getSource().getPlayer();
-                    p.giveItemStack(new ItemStack(HERO_EXPERIENCE_TOME));
-                    p.giveItemStack(new ItemStack(ROYAL_GROWTH_TOME));
-                    p.sendMessage(Text.literal("§d영웅의 경험서§f와 §6왕실 성장의 서§f를 지급했습니다."), false);
-                    return 1;
-                }));
-            root.then(level);
-
-            var xp = CommandManager.literal("xp");
-            xp.then(CommandManager.literal("give")
-                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 1_000_000))
-                    .executes(ctx -> {
-                        ServerPlayerEntity p = ctx.getSource().getPlayer();
-                        int amount = IntegerArgumentType.getInteger(ctx, "amount");
-                        boolean integrated = RpgProgressBridge.addXp(p, amount);
-                        RpgProgressBridge.feedback(p, "+" + amount + " XP", integrated);
-                        return 1;
-                    })));
-            root.then(xp);
-
-            var points = CommandManager.literal("points").requires(s -> s.hasPermissionLevel(2));
-            points.then(CommandManager.literal("add")
-                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 1_000_000))
-                    .executes(ctx -> {
-                        int amount = IntegerArgumentType.getInteger(ctx, "amount");
-                        int value = RpgProgressBridge.addPoints(ctx.getSource().getPlayer(), amount);
-                        if (value < 0) return 0;
-                        ctx.getSource().sendFeedback(() -> Text.literal("§a스탯 포인트 +" + amount + " → 현재 " + value + "P"), false);
-                        return 1;
-                    })));
-            points.then(CommandManager.literal("set")
-                .then(CommandManager.argument("amount", IntegerArgumentType.integer(0, 1_000_000))
-                    .executes(ctx -> {
-                        int value = RpgProgressBridge.setPoints(ctx.getSource().getPlayer(), IntegerArgumentType.getInteger(ctx, "amount"));
-                        if (value < 0) return 0;
-                        ctx.getSource().sendFeedback(() -> Text.literal("§a스탯 포인트 = " + value + "P"), false);
-                        return 1;
-                    })));
-            points.then(CommandManager.literal("max").executes(ctx -> {
-                int value = RpgProgressBridge.maxPoints(ctx.getSource().getPlayer());
-                if (value < 0) return 0;
-                ctx.getSource().sendFeedback(() -> Text.literal("§a사용 가능한 포인트를 최대치 " + value + "P로 채웠습니다."), false);
-                return 1;
-            }));
-            root.then(points);
-
-            var stats = CommandManager.literal("stats").requires(s -> s.hasPermissionLevel(2));
-            stats.then(CommandManager.literal("add")
-                .then(CommandManager.argument("stat", StringArgumentType.word())
-                    .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 10000))
-                        .executes(ctx -> {
-                            ServerPlayerEntity p = ctx.getSource().getPlayer();
-                            String stat = StringArgumentType.getString(ctx, "stat");
-                            int value = RpgProgressBridge.addStat(p, stat, IntegerArgumentType.getInteger(ctx, "amount"));
-                            if (value == Integer.MIN_VALUE) {
-                                ctx.getSource().sendError(Text.literal("알 수 없는 스탯입니다. 예: strength, vitality, defense, agility"));
-                                return 0;
-                            }
-                            RpgProgressBridge.refreshCombatStats(p);
-                            ctx.getSource().sendFeedback(() -> Text.literal("§a" + stat + " → " + value), false);
-                            return 1;
-                        }))));
-            stats.then(CommandManager.literal("set")
-                .then(CommandManager.argument("stat", StringArgumentType.word())
-                    .then(CommandManager.argument("amount", IntegerArgumentType.integer(0, 10000))
-                        .executes(ctx -> {
-                            ServerPlayerEntity p = ctx.getSource().getPlayer();
-                            String stat = StringArgumentType.getString(ctx, "stat");
-                            int value = RpgProgressBridge.setStat(p, stat, IntegerArgumentType.getInteger(ctx, "amount"));
-                            if (value == Integer.MIN_VALUE) return 0;
-                            RpgProgressBridge.refreshCombatStats(p);
-                            ctx.getSource().sendFeedback(() -> Text.literal("§a" + stat + " = " + value), false);
-                            return 1;
-                        }))));
-            root.then(stats);
-
-            var kingdom = CommandManager.literal("kingdom").requires(s -> s.hasPermissionLevel(2));
-            kingdom.then(CommandManager.literal("repairground").executes(ctx -> {
-                OneCapitalCoordinator.rebuildAll(ctx.getSource().getWorld());
-                ctx.getSource().sendFeedback(() -> Text.literal("§a옛 지하 수도/NPC를 정리하고 6개 수도를 지표면 위 하나씩 다시 세웠습니다."), true);
-                return 1;
-            }));
-            kingdom.then(CommandManager.literal("rebuildall").executes(ctx -> {
-                OneCapitalCoordinator.rebuildAll(ctx.getSource().getWorld());
-                ctx.getSource().sendFeedback(() -> Text.literal("§a6개 수도 단일 지상 재건 완료"), true);
-                return 1;
-            }));
-            kingdom.then(CommandManager.literal("rebuild")
-                .then(CommandManager.argument("nation", StringArgumentType.word()).executes(ctx -> {
-                    String id = StringArgumentType.getString(ctx, "nation");
-                    if (!OneCapitalCoordinator.rebuildOne(ctx.getSource().getWorld(), id)) {
-                        ctx.getSource().sendError(Text.literal("국가: " + MedievalKingdoms.nationList()));
-                        return 0;
-                    }
-                    ctx.getSource().sendFeedback(() -> Text.literal("§a" + id + " 지상 수도 재건 완료"), true);
+                    int value = IntegerArgumentType.getInteger(ctx, "level");
+                    boolean ok = RpgProgressBridge.setLevel(p, value);
+                    RpgProgressBridge.feedback(p, "Lv." + value + " 설정", ok);
                     return 1;
                 })));
-            kingdom.then(CommandManager.literal("rebuildhere")
+
+            // /rpg xp 5000
+            root.then(CommandManager.literal("xp").requires(s -> s.hasPermissionLevel(2))
+                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 1_000_000)).executes(ctx -> {
+                    ServerPlayerEntity p = ctx.getSource().getPlayer();
+                    int amount = IntegerArgumentType.getInteger(ctx, "amount");
+                    boolean ok = RpgProgressBridge.addXp(p, amount);
+                    RpgProgressBridge.feedback(p, "+" + amount + " XP", ok);
+                    return 1;
+                })));
+
+            // /rpg pt 100 : add points
+            root.then(CommandManager.literal("pt").requires(s -> s.hasPermissionLevel(2))
+                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 1_000_000)).executes(ctx -> {
+                    int add = IntegerArgumentType.getInteger(ctx, "amount");
+                    int now = RpgProgressBridge.addPoints(ctx.getSource().getPlayer(), add);
+                    if (now < 0) return 0;
+                    ctx.getSource().sendFeedback(() -> Text.literal("§a포인트 +" + add + " → " + now + "P"), false);
+                    return 1;
+                })));
+
+            root.then(CommandManager.literal("ptmax").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                int now = RpgProgressBridge.maxPoints(ctx.getSource().getPlayer());
+                if (now < 0) return 0;
+                ctx.getSource().sendFeedback(() -> Text.literal("§a포인트 최대치 → " + now + "P"), false);
+                return 1;
+            }));
+
+            // /rpg str 50 : add strength quickly
+            root.then(CommandManager.literal("str").requires(s -> s.hasPermissionLevel(2))
+                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 10000)).executes(ctx -> {
+                    ServerPlayerEntity p = ctx.getSource().getPlayer();
+                    int now = RpgProgressBridge.addStat(p, "strength", IntegerArgumentType.getInteger(ctx, "amount"));
+                    RpgProgressBridge.refreshCombatStats(p);
+                    ctx.getSource().sendFeedback(() -> Text.literal("§c힘(STR) → " + now), false);
+                    return 1;
+                })));
+
+            // /rpg stat strength 100 : exact stat value
+            root.then(CommandManager.literal("stat").requires(s -> s.hasPermissionLevel(2))
+                .then(CommandManager.argument("stat", StringArgumentType.word())
+                    .then(CommandManager.argument("value", IntegerArgumentType.integer(0, 10000)).executes(ctx -> {
+                        ServerPlayerEntity p = ctx.getSource().getPlayer();
+                        String stat = StringArgumentType.getString(ctx, "stat");
+                        int now = RpgProgressBridge.setStat(p, stat, IntegerArgumentType.getInteger(ctx, "value"));
+                        if (now == Integer.MIN_VALUE) {
+                            ctx.getSource().sendError(Text.literal("스탯 예: strength, vitality, defense, agility, attackspeed, movespeed"));
+                            return 0;
+                        }
+                        RpgProgressBridge.refreshCombatStats(p);
+                        ctx.getSource().sendFeedback(() -> Text.literal("§a" + stat + " = " + now), false);
+                        return 1;
+                    }))));
+
+            root.then(CommandManager.literal("book").executes(ctx -> {
+                ServerPlayerEntity p = ctx.getSource().getPlayer();
+                p.giveItemStack(new ItemStack(HERO_EXPERIENCE_TOME));
+                p.giveItemStack(new ItemStack(ROYAL_GROWTH_TOME));
+                p.sendMessage(Text.literal("§d영웅의 경험서§f + §6왕실 성장의 서§f 지급"), false);
+                return 1;
+            }));
+
+            // /rpg city = all, /rpg city aurelia = one
+            var city = CommandManager.literal("city").requires(s -> s.hasPermissionLevel(2));
+            city.executes(ctx -> {
+                int npcs = OneCapitalCoordinator.rebuildAll(ctx.getSource().getWorld());
+                ctx.getSource().sendFeedback(() -> Text.literal("§a6개 지상 왕국 재건 완료 · NPC " + npcs + "명 배치"), true);
+                return 1;
+            });
+            city.then(CommandManager.argument("nation", StringArgumentType.word()).executes(ctx -> {
+                String id = StringArgumentType.getString(ctx, "nation");
+                int npcs = OneCapitalCoordinator.rebuildOne(ctx.getSource().getWorld(), id);
+                if (npcs < 0) {
+                    ctx.getSource().sendError(Text.literal("국가: " + MedievalKingdoms.nationList()));
+                    return 0;
+                }
+                ctx.getSource().sendFeedback(() -> Text.literal("§a" + id + " 재건 완료 · NPC " + npcs + "명 배치"), true);
+                return 1;
+            }));
+            root.then(city);
+
+            // /rpg here aurelia
+            root.then(CommandManager.literal("here").requires(s -> s.hasPermissionLevel(2))
                 .then(CommandManager.argument("nation", StringArgumentType.word()).executes(ctx -> {
                     String id = StringArgumentType.getString(ctx, "nation");
                     MedievalKingdoms.Nation nation = MedievalKingdoms.nation(id);
@@ -177,10 +141,23 @@ public final class CrownCinderPatch implements ModInitializer {
                     }
                     ServerPlayerEntity p = ctx.getSource().getPlayer();
                     MedievalKingdoms.rebuild(ctx.getSource().getWorld(), p.getBlockPos(), nation);
-                    ctx.getSource().sendFeedback(() -> Text.literal("§a현재 위치를 중심으로 " + nation.name() + " 재건 완료"), true);
+                    int npcs = NpcBootstrap020.respawnOne(ctx.getSource().getWorld(), id);
+                    ctx.getSource().sendFeedback(() -> Text.literal("§a현재 위치에 " + nation.name() + " 생성 · NPC " + npcs + "명"), true);
                     return 1;
                 })));
-            root.then(kingdom);
+
+            // /rpg npc : repair/populate all capital NPCs without rebuilding blocks
+            root.then(CommandManager.literal("npc").requires(s -> s.hasPermissionLevel(2)).executes(ctx -> {
+                int npcs = NpcBootstrap020.respawnAll(ctx.getSource().getWorld());
+                ctx.getSource().sendFeedback(() -> Text.literal("§a왕·기사·용병·주민 NPC 재배치 완료: " + npcs + "명"), true);
+                return 1;
+            }));
+
+            // /rpg home : safe central plaza
+            root.then(CommandManager.literal("home").executes(ctx -> {
+                OneCapitalCoordinator.placePlayerAtSafeSpawn(ctx.getSource().getPlayer(), true);
+                return 1;
+            }));
 
             dispatcher.register(root);
         });
