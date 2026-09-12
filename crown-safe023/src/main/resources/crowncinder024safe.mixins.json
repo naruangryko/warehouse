@@ -5,7 +5,8 @@
   "compatibilityLevel": "JAVA_17",
   "mixins": [
     "KingdomHeightMixin024",
-    "Safe025ResourceMixin026"
+    "Safe025ResourceMixin026",
+    "StarterWeaponMixin027"
   ],
   "injectors": {
     "defaultRequire": 0
