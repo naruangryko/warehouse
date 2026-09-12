@@ -1,5 +1,6 @@
 package dev.crowncinderpatch;
 
+import net.minecraft.block.Blocks;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.EntityType;
@@ -17,7 +18,7 @@ import net.minecraft.village.VillagerType;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Reliable post-build NPC population pass for 0.20. */
+/** Reliable automatic NPC population pass. No manual summon command is required. */
 public final class NpcBootstrap020 {
     private NpcBootstrap020() {}
 
@@ -41,7 +42,6 @@ public final class NpcBootstrap020 {
         new Role("왕실 사제", VillagerProfession.CLERIC, -25, -12, 3),
         new Role("왕실 요리사", VillagerProfession.BUTCHER, 2, -12, 0),
         new Role("왕궁 하인", VillagerProfession.FARMER, -2, -4, 0),
-
         new Role("기사단장", VillagerProfession.WEAPONSMITH, -54, -22, 2),
         new Role("기사 부단장", VillagerProfession.ARMORER, -51, -22, 2),
         new Role("왕실 기사", VillagerProfession.WEAPONSMITH, -57, -18, 2),
@@ -50,7 +50,6 @@ public final class NpcBootstrap020 {
         new Role("기사 보급관", VillagerProfession.TOOLSMITH, -51, -26, 2),
         new Role("기사", VillagerProfession.WEAPONSMITH, -59, -16, 2),
         new Role("기사", VillagerProfession.ARMORER, -49, -16, 2),
-
         new Role("용병단장", VillagerProfession.WEAPONSMITH, 54, -22, 1),
         new Role("베테랑 용병", VillagerProfession.LEATHERWORKER, 51, -22, 1),
         new Role("베테랑 용병", VillagerProfession.FLETCHER, 57, -18, 1),
@@ -59,21 +58,18 @@ public final class NpcBootstrap020 {
         new Role("현상금 담당관", VillagerProfession.LIBRARIAN, 51, -26, 0),
         new Role("용병", VillagerProfession.LEATHERWORKER, 59, -16, 1),
         new Role("용병", VillagerProfession.FLETCHER, 49, -16, 1),
-
         new Role("여관주인", VillagerProfession.BUTCHER, -54, 20, 0),
         new Role("주방장", VillagerProfession.FARMER, -51, 20, 0),
         new Role("음유시인", VillagerProfession.LIBRARIAN, -57, 23, 0),
         new Role("대장장이", VillagerProfession.WEAPONSMITH, 54, 20, 2),
         new Role("갑옷 장인", VillagerProfession.ARMORER, 51, 20, 2),
         new Role("도구 장인", VillagerProfession.TOOLSMITH, 57, 20, 1),
-
         new Role("시장 상인", VillagerProfession.CARTOGRAPHER, -10, 22, 0),
         new Role("약초상", VillagerProfession.CLERIC, 0, 22, 0),
         new Role("빵집 주인", VillagerProfession.FARMER, 10, 22, 0),
         new Role("직물 상인", VillagerProfession.SHEPHERD, -15, 27, 0),
         new Role("지도 제작자", VillagerProfession.CARTOGRAPHER, 15, 27, 0),
         new Role("가죽 장인", VillagerProfession.LEATHERWORKER, 20, 22, 0),
-
         new Role("농부", VillagerProfession.FARMER, -54, 45, 0),
         new Role("농부", VillagerProfession.FARMER, -36, 54, 0),
         new Role("석공", VillagerProfession.MASON, -15, 54, 0),
@@ -90,12 +86,12 @@ public final class NpcBootstrap020 {
         new Role("주민", VillagerProfession.NONE, 15, -54, 0)
     };
 
+    public static int expectedTotal() { return SITES.length * ROLES.length; }
+
     public static int respawnAll(ServerWorld world) {
         BlockPos anchor = OneCapitalCoordinator.anchor(world);
         int total = 0;
-        for (Site site : SITES) {
-            total += respawnAt(world, anchor.add(site.dx(), 0, site.dz()), site.id(), site.name());
-        }
+        for (Site site : SITES) total += respawnAt(world, anchor.add(site.dx(), 0, site.dz()), site.id(), site.name());
         return total;
     }
 
@@ -110,6 +106,7 @@ public final class NpcBootstrap020 {
     private static int respawnAt(ServerWorld world, BlockPos rough, String id, String nationName) {
         int cityY = MedievalKingdoms.sampleBuildHeight(world, rough.getX(), rough.getZ());
         BlockPos center = new BlockPos(rough.getX(), cityY, rough.getZ());
+        world.getChunk(center.getX() >> 4, center.getZ() >> 4);
         clearOldNpcs(world, center);
 
         int count = 0;
@@ -119,7 +116,7 @@ public final class NpcBootstrap020 {
             int z = center.getZ() + role.z();
             world.getChunk(x >> 4, z >> 4);
             BlockPos safe = findSafeFloor(world, x, center.getY() + 2, z);
-            if (safe == null) continue;
+            if (safe == null) safe = createFallbackSpot(world, x, center.getY() + 2, z);
 
             VillagerEntity v = EntityType.VILLAGER.create(world);
             if (v == null) continue;
@@ -132,7 +129,6 @@ public final class NpcBootstrap020 {
             v.addCommandTag("crown020_npc");
             v.addCommandTag("crown020_" + id);
             equip(v, role.gear());
-
             if (world.spawnEntity(v)) count++;
         }
         return count;
@@ -146,17 +142,16 @@ public final class NpcBootstrap020 {
 
     private static BlockPos findSafeFloor(ServerWorld world, int baseX, int preferredY, int baseZ) {
         BlockPos.Mutable p = new BlockPos.Mutable();
-        for (int radius = 0; radius <= 5; radius++) {
+        for (int radius = 0; radius <= 12; radius++) {
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
                     if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
                     int x = baseX + dx;
                     int z = baseZ + dz;
                     world.getChunk(x >> 4, z >> 4);
-                    for (int y = preferredY - 1; y <= preferredY + 10; y++) {
+                    for (int y = preferredY - 2; y <= preferredY + 18; y++) {
                         if (y <= world.getBottomY() + 2 || y >= world.getTopY() - 2) continue;
-                        boolean floor = !world.getBlockState(p.set(x, y - 1, z)).isAir()
-                            && world.getBlockState(p).getFluidState().isEmpty();
+                        boolean floor = !world.getBlockState(p.set(x, y - 1, z)).isAir() && world.getBlockState(p).getFluidState().isEmpty();
                         boolean body = world.getBlockState(p.set(x, y, z)).isAir();
                         boolean head = world.getBlockState(p.set(x, y + 1, z)).isAir();
                         if (floor && body && head) return new BlockPos(x, y, z);
@@ -167,9 +162,21 @@ public final class NpcBootstrap020 {
         return null;
     }
 
+    /** Last-resort guaranteed indoor standing spot when a detailed building happens to block every candidate tile. */
+    private static BlockPos createFallbackSpot(ServerWorld world, int x, int y, int z) {
+        int safeY = Math.max(world.getBottomY() + 4, Math.min(world.getTopY() - 4, y));
+        BlockPos floor = new BlockPos(x, safeY - 1, z);
+        BlockPos body = new BlockPos(x, safeY, z);
+        BlockPos head = new BlockPos(x, safeY + 1, z);
+        world.setBlockState(floor, Blocks.SPRUCE_PLANKS.getDefaultState(), 2);
+        world.setBlockState(body, Blocks.AIR.getDefaultState(), 2);
+        world.setBlockState(head, Blocks.AIR.getDefaultState(), 2);
+        return body;
+    }
+
     private static void clearOldNpcs(ServerWorld world, BlockPos center) {
         Box box = new Box(center.add(-78, -28, -78), center.add(78, 40, 78));
-        List<Entity> remove = new ArrayList<>(world.getOtherEntities(null, box, e -> shouldClear(e)));
+        List<Entity> remove = new ArrayList<>(world.getOtherEntities(null, box, NpcBootstrap020::shouldClear));
         for (Entity e : remove) e.discard();
     }
 
