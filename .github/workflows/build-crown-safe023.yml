@@ -1,4 +1,4 @@
-name: Build Crown and Cinder 0.26 Safe
+name: Build Crown and Cinder 0.27 Safe
 on:
   push:
     branches: [crown-cinder-0.18.0-patch]
@@ -26,27 +26,25 @@ jobs:
       - name: Verify safe JAR
         working-directory: crown-safe023
         run: |
-          JAR=$(ls build/libs/crown-and-cinder-0.26.0-safe-*.jar | grep -v sources | head -1)
+          JAR=$(ls build/libs/crown-and-cinder-0.27.0-safe-*.jar | grep -v sources | head -1)
           test -n "$JAR"
           jar tf "$JAR" | grep -q 'dev/crowncindersafe/Safe025.class'
           jar tf "$JAR" | grep -q 'dev/crowncindersafe/Safe026.class'
-          jar tf "$JAR" | grep -q 'dev/crowncindersafe/Safe026Maintenance.class'
-          jar tf "$JAR" | grep -q 'dev/crowncindersafe/mixin/Safe025ResourceMixin026.class'
-          jar tf "$JAR" | grep -q 'dev/crowncindersafe/mixin/KingdomHeightMixin024.class'
-          jar tf "$JAR" | grep -q 'assets/crowncinder023safe/models/item/archmage_staff.json'
-          jar tf "$JAR" | grep -q 'assets/crowncinder023safe/models/item/archmage_cloak.json'
-          jar tf "$JAR" | grep -q 'assets/crowncinder023safe/models/item/nature_rod.json'
-          jar tf "$JAR" | grep -q 'data/crowncinder023safe/recipes/archmage_staff.json'
-          unzip -p "$JAR" fabric.mod.json | grep -q 'crowncinder023safe'
-          unzip -p "$JAR" fabric.mod.json | grep -q '0.26.0'
-          unzip -p "$JAR" fabric.mod.json | grep -q 'Safe026'
+          jar tf "$JAR" | grep -q 'dev/crowncindersafe/Safe027.class'
+          jar tf "$JAR" | grep -q 'dev/crowncindersafe/mixin/StarterWeaponMixin027.class'
+          jar tf "$JAR" | grep -q 'assets/crowncinder023safe/models/item/iron_longsword.json'
+          jar tf "$JAR" | grep -q 'assets/crowncinder023safe/models/item/novice_staff.json'
+          ! jar tf "$JAR" | grep -q 'data/crowncinder023safe/recipes/archmage_staff.json'
+          ! jar tf "$JAR" | grep -q 'data/crowncinder023safe/recipes/archmage_cloak.json'
+          unzip -p "$JAR" fabric.mod.json | grep -q '0.27.0'
+          unzip -p "$JAR" fabric.mod.json | grep -q 'Safe027'
       - name: Stage artifact
         run: |
-          mkdir -p release-safe026
-          JAR=$(ls crown-safe023/build/libs/crown-and-cinder-0.26.0-safe-*.jar | grep -v sources | head -1)
-          cp "$JAR" release-safe026/crown-and-cinder-0.26.0-safe-addon-fabric-1.20.1.jar
-          sha256sum release-safe026/crown-and-cinder-0.26.0-safe-addon-fabric-1.20.1.jar > release-safe026/SHA256.txt
+          mkdir -p release-safe027
+          JAR=$(ls crown-safe023/build/libs/crown-and-cinder-0.27.0-safe-*.jar | grep -v sources | head -1)
+          cp "$JAR" release-safe027/crown-and-cinder-0.27.0-safe-addon-fabric-1.20.1.jar
+          sha256sum release-safe027/crown-and-cinder-0.27.0-safe-addon-fabric-1.20.1.jar > release-safe027/SHA256.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: crown-and-cinder-0.26.0-safe-addon
-          path: release-safe026/
+          name: crown-and-cinder-0.27.0-safe-addon
+          path: release-safe027/
