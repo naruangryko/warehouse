@@ -66,8 +66,8 @@ public final class Safe023 implements ModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> server.execute(() -> {
             ServerPlayerEntity p = handler.getPlayer();
             try {
-                if (!p.getScoreboardTags().contains("ccsafe_staff_granted")) {
-                    p.addScoreboardTag("ccsafe_staff_granted");
+                if (!p.getCommandTags().contains("ccsafe_staff_granted")) {
+                    p.addCommandTag("ccsafe_staff_granted");
                     p.giveItemStack(new ItemStack(ARCANE_STAFF));
                     p.sendMessage(Text.literal("§b[Crown & Cinder] §f마법 스태프를 지급했습니다. Lv.10 또는 마법서 사용 후 우클릭해 보세요."), false);
                 }
@@ -83,7 +83,6 @@ public final class Safe023 implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             var rpg = CommandManager.literal("rpg");
 
-            // No OP permission requirement: /rpg stats up <stat> <amount>
             rpg.then(CommandManager.literal("stats")
                 .then(CommandManager.literal("up")
                     .then(CommandManager.argument("stat", StringArgumentType.word())
@@ -130,15 +129,13 @@ public final class Safe023 implements ModInitializer {
         }
     }
 
-    /** Every 10 RPG levels: permanent strength +2, defense +2, vitality +3, exactly once per milestone. */
     private static void syncMilestones(ServerPlayerEntity p) {
         int level = Math.max(1, getLevel(p));
         int max = Math.min(100, (level / 10) * 10);
         for (int milestone = 10; milestone <= max; milestone += 10) {
             String tag = "ccsafe_growth_" + milestone;
-            if (p.getScoreboardTags().contains(tag)) continue;
-            // Mark first so a failed/partial follow-up never loops every tick and crashes a world.
-            p.addScoreboardTag(tag);
+            if (p.getCommandTags().contains(tag)) continue;
+            p.addCommandTag(tag);
             int s = addStat(p, "strength", 2);
             int d = addStat(p, "defense", 2);
             int v = addStat(p, "vitality", 3);
@@ -162,7 +159,6 @@ public final class Safe023 implements ModInitializer {
     }
 
     private static void tryNaturalSpawn(ServerWorld world, ServerPlayerEntity player, boolean night) {
-        // Protect populated towns/capitals without depending on private Crown & Cinder world classes.
         if (!world.getEntitiesByClass(VillagerEntity.class, player.getBoundingBox().expand(96.0), v -> v.isAlive()).isEmpty()) return;
         int hostile = world.getEntitiesByClass(HostileEntity.class, player.getBoundingBox().expand(48.0), e -> e.isAlive()).size();
         if (hostile >= 18) return;
@@ -189,7 +185,6 @@ public final class Safe023 implements ModInitializer {
         if (world.getBlockState(pos.down()).isAir()) return;
 
         Identifier id = new Identifier("crowncinder", mobName);
-        // Critical safety check: never create fallback/pig/unknown entity ids.
         if (!Registries.ENTITY_TYPE.containsId(id)) return;
         EntityType<?> type = Registries.ENTITY_TYPE.get(id);
         if (!id.equals(Registries.ENTITY_TYPE.getId(type))) return;
@@ -213,7 +208,7 @@ public final class Safe023 implements ModInitializer {
 
     private static int magicTier(ServerPlayerEntity p) {
         int fromLevel = Math.min(10, Math.max(0, getLevel(p) / 10));
-        int fromBook = p.getScoreboardTags().contains("ccsafe_magic_book") ? 1 : 0;
+        int fromBook = p.getCommandTags().contains("ccsafe_magic_book") ? 1 : 0;
         return Math.max(fromLevel, fromBook);
     }
 
@@ -291,7 +286,7 @@ public final class Safe023 implements ModInitializer {
             ItemStack stack = user.getStackInHand(hand);
             if (!world.isClient && user instanceof ServerPlayerEntity p) {
                 try {
-                    p.addScoreboardTag("ccsafe_magic_book");
+                    p.addCommandTag("ccsafe_magic_book");
                     p.sendMessage(Text.literal("§d[마법서] §f기본 마법 '마력탄'을 배웠습니다."), false);
                     if (!p.getAbilities().creativeMode) stack.decrement(1);
                 } catch (Throwable ignored) {}
@@ -300,7 +295,6 @@ public final class Safe023 implements ModInitializer {
         }
     }
 
-    // ---- Reflection bridge to the existing 0.22 RPG progress system ----
     private static int getLevel(ServerPlayerEntity p) {
         try {
             Object progress = progress(p);
