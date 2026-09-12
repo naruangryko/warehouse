@@ -2,13 +2,17 @@
   "schemaVersion": 1,
   "id": "crowncinder023safe",
   "version": "${version}",
-  "name": "Crown & Cinder 0.25 Safe",
-  "description": "Crash-safe class, stat menu, mana, stamina, magic, natural spawning and kingdom height correction for Crown & Cinder 0.22.",
+  "name": "Crown & Cinder 0.26 Safe",
+  "description": "Crash-safe class, stats, mana/stamina, archmage equipment, legendary and nature magic, natural spawning and kingdom height correction for Crown & Cinder 0.22.",
   "authors": ["Crown & Cinder Project"],
   "license": "All Rights Reserved",
   "environment": "*",
   "entrypoints": {
-    "main": ["dev.crowncindersafe.Safe025"]
+    "main": [
+      "dev.crowncindersafe.Safe025",
+      "dev.crowncindersafe.Safe026",
+      "dev.crowncindersafe.Safe026Maintenance"
+    ]
   },
   "mixins": ["crowncinder024safe.mixins.json"],
   "depends": {
