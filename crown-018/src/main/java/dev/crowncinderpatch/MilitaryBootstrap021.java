@@ -3,6 +3,9 @@ package dev.crowncinderpatch;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.attribute.EntityAttribute;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -17,7 +20,7 @@ import net.minecraft.util.math.Box;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 0.21 military population: 20 inner-wall knights, 40 outer-wall knights, plus royal guards per capital. */
+/** 0.22 military population: royal guards, elite commanders, 20 inner-wall knights and 40 outer-wall knights. */
 public final class MilitaryBootstrap021 {
     private MilitaryBootstrap021() {}
 
@@ -27,12 +30,24 @@ public final class MilitaryBootstrap021 {
         clear(world, c);
         int count = 0;
 
-        // Eight elite guards around the throne/keep.
+        // Eight royal/imperial guards around the keep.
         int[][] royal = {{-4,-14},{4,-14},{-7,-10},{7,-10},{-7,-4},{7,-4},{-4,0},{4,0}};
         for (int i = 0; i < royal.length; i++) {
             count += spawn(world, c.add(royal[i][0], 0, royal[i][1]), nation,
                 "central_empire".equals(nation.id()) ? "황실 수호기사" : "왕실 수호기사",
-                "crown_guard", "knight_blade", 3);
+                "crown_guard", "knight_blade", 3, 0);
+        }
+
+        // Central Empire leadership hierarchy. These four are intentionally much stronger than ordinary knights.
+        if ("central_empire".equals(nation.id())) {
+            count += spawn(world, c.add(0, 0, -15), nation,
+                "황실 수호기사단장", "crown_guard", "imperial_blade", 3, 3);
+            count += spawn(world, c.add(-8, 0, -20), nation,
+                "기사단장", "crown_guard", "imperial_blade", 3, 2);
+            count += spawn(world, c.add(-12, 0, -18), nation,
+                "제1 부기사단장", "imperial_spear_knight", "spear", 3, 1);
+            count += spawn(world, c.add(-4, 0, -18), nation,
+                "제2 부기사단장", "imperial_archer", "bow", 3, 1);
         }
 
         // 20 inside the first wall, mixed sword/spear/bow.
@@ -52,12 +67,13 @@ public final class MilitaryBootstrap021 {
             String entity = kind == 0 ? "crown_guard" : (kind == 1 ? "imperial_spear_knight" : "imperial_archer");
             String weapon = kind == 0 ? "knight_blade" : (kind == 1 ? "spear" : "bow");
             String role = title + (kind == 0 ? " · 검" : kind == 1 ? " · 창" : " · 활");
-            made += spawn(world, new BlockPos(x, c.getY(), z), nation, role, entity, weapon, kind);
+            made += spawn(world, new BlockPos(x, c.getY(), z), nation, role, entity, weapon, kind, 0);
         }
         return made;
     }
 
-    private static int spawn(ServerWorld world, BlockPos approx, MedievalKingdoms.Nation nation, String role, String entityId, String weaponId, int gear) {
+    /** elite: 0 normal, 1 vice captain, 2 knight commander, 3 imperial guard commander. */
+    private static int spawn(ServerWorld world, BlockPos approx, MedievalKingdoms.Nation nation, String role, String entityId, String weaponId, int gear, int elite) {
         world.getChunk(approx.getX() >> 4, approx.getZ() >> 4);
         BlockPos safe = safe(world, approx.getX(), approx.getY() + 2, approx.getZ());
         if (safe == null) safe = approx.up(2);
@@ -66,17 +82,45 @@ public final class MilitaryBootstrap021 {
         Entity e = typeOpt.get().create(world);
         if (!(e instanceof LivingEntity living)) return 0;
         living.refreshPositionAndAngles(safe.getX() + 0.5, safe.getY(), safe.getZ() + 0.5, world.random.nextFloat() * 360f, 0f);
-        living.setCustomName(Text.literal("§9[" + nation.name() + "] §f" + role));
-        living.setCustomNameVisible(false);
+
+        String prefix = elite >= 3 ? "§6§l" : elite == 2 ? "§c§l" : elite == 1 ? "§e§l" : "§9";
+        living.setCustomName(Text.literal(prefix + "[" + nation.name() + "] §f" + role));
+        living.setCustomNameVisible(elite > 0);
         living.addCommandTag("crown021_military");
         living.addCommandTag("crown021_" + nation.id());
-        Item weapon = Registries.ITEM.getOrEmpty(new Identifier("crowncinder", weaponId)).orElse(weaponId.equals("bow") ? Items.BOW : Items.IRON_SWORD);
+        if (elite > 0) living.addCommandTag("crown022_commander");
+
+        Item weapon = Registries.ITEM.getOrEmpty(new Identifier("crowncinder", weaponId))
+            .orElse(weaponId.equals("bow") ? Items.BOW : Items.IRON_SWORD);
         living.equipStack(EquipmentSlot.MAINHAND, new ItemStack(weapon));
-        if (gear == 3) living.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.DIAMOND_HELMET));
-        else if (gear == 2) living.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.CHAINMAIL_HELMET));
+        if (gear == 3) {
+            living.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.DIAMOND_HELMET));
+            living.equipStack(EquipmentSlot.CHEST, new ItemStack(Items.DIAMOND_CHESTPLATE));
+            living.equipStack(EquipmentSlot.LEGS, new ItemStack(Items.DIAMOND_LEGGINGS));
+            living.equipStack(EquipmentSlot.FEET, new ItemStack(Items.DIAMOND_BOOTS));
+        } else if (gear == 2) living.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.CHAINMAIL_HELMET));
         else living.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+
+        if (elite == 1) applyElite(living, 120.0, 18.0, 14.0, 0.32, 0.15);
+        else if (elite == 2) applyElite(living, 180.0, 26.0, 18.0, 0.34, 0.25);
+        else if (elite == 3) applyElite(living, 240.0, 32.0, 22.0, 0.36, 0.35);
+
         if (living instanceof MobEntity mob) mob.setPersistent();
         return world.spawnEntity(living) ? 1 : 0;
+    }
+
+    private static void applyElite(LivingEntity living, double hp, double damage, double armor, double speed, double knockbackResistance) {
+        setBase(living, EntityAttributes.GENERIC_MAX_HEALTH, hp);
+        setBase(living, EntityAttributes.GENERIC_ATTACK_DAMAGE, damage);
+        setBase(living, EntityAttributes.GENERIC_ARMOR, armor);
+        setBase(living, EntityAttributes.GENERIC_MOVEMENT_SPEED, speed);
+        setBase(living, EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, knockbackResistance);
+        living.setHealth((float)hp);
+    }
+
+    private static void setBase(LivingEntity living, EntityAttribute attribute, double value) {
+        EntityAttributeInstance instance = living.getAttributeInstance(attribute);
+        if (instance != null) instance.setBaseValue(value);
     }
 
     private static BlockPos safe(ServerWorld world, int x, int y0, int z) {
@@ -96,7 +140,8 @@ public final class MilitaryBootstrap021 {
 
     private static void clear(ServerWorld world, BlockPos c) {
         Box box = new Box(c.add(-75, -10, -75), c.add(75, 35, 75));
-        List<Entity> remove = new ArrayList<>(world.getOtherEntities(null, box, e -> e.getCommandTags().contains("crown021_military")));
+        List<Entity> remove = new ArrayList<>(world.getOtherEntities(null, box,
+            e -> e.getCommandTags().contains("crown021_military") || e.getCommandTags().contains("crown022_commander")));
         for (Entity e : remove) e.discard();
     }
 }
