@@ -4,6 +4,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
@@ -23,6 +24,18 @@ public final class CrownCinderPatch implements ModInitializer {
     public void onInitialize() {
         Registry.register(Registries.ITEM, new Identifier(MOD_ID, "hero_experience_tome"), HERO_EXPERIENCE_TOME);
         Registry.register(Registries.ITEM, new Identifier(MOD_ID, "royal_growth_tome"), ROYAL_GROWTH_TOME);
+
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            ServerPlayerEntity player = handler.getPlayer();
+            ServerWorld world = player.getServerWorld();
+            server.execute(() -> {
+                if (!MedievalKingdoms.hasGenerated(world) && world.getTime() <= 6000L) {
+                    player.sendMessage(Text.literal("§6[Crown & Cinder] §f새 월드의 자연 지표면을 계산해 6개 왕국을 땅 위에 건설합니다."), false);
+                    MedievalKingdoms.ensureFreshWorld(world);
+                    player.sendMessage(Text.literal("§a[Crown & Cinder] §f이중 성벽 도시와 NPC 배치가 완료되었습니다."), false);
+                }
+            });
+        });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             var root = CommandManager.literal("rpg");
@@ -79,15 +92,15 @@ public final class CrownCinderPatch implements ModInitializer {
             kingdom.then(CommandManager.literal("repairground")
                 .executes(ctx -> {
                     ServerWorld w = ctx.getSource().getWorld();
-                    ctx.getSource().sendFeedback(() -> Text.literal("§6왕국 지면 보정 + 중세 수도 재건을 시작합니다. 기존 월드는 반드시 백업하세요."), true);
+                    ctx.getSource().sendFeedback(() -> Text.literal("§6지표면 재측정 후 이중 성벽 도시를 다시 건설합니다. 월드 백업을 권장합니다."), true);
                     MedievalKingdoms.rebuildAll(w);
-                    ctx.getSource().sendFeedback(() -> Text.literal("§a6개 수도의 지면 보정과 중세식 재건이 완료되었습니다."), true);
+                    ctx.getSource().sendFeedback(() -> Text.literal("§a6개 왕국 재건 완료: 외성벽·내성벽·마을·기사단·용병단·NPC 포함"), true);
                     return 1;
                 }));
             kingdom.then(CommandManager.literal("rebuildall")
                 .executes(ctx -> {
                     MedievalKingdoms.rebuildAll(ctx.getSource().getWorld());
-                    ctx.getSource().sendFeedback(() -> Text.literal("§a중앙 제국 + 5개 왕국을 지표면 기준으로 다시 세웠습니다."), true);
+                    ctx.getSource().sendFeedback(() -> Text.literal("§a중앙 제국 + 5개 왕국을 지표면 위 이중 성곽도시로 다시 세웠습니다."), true);
                     return 1;
                 }));
             kingdom.then(CommandManager.literal("rebuild")
