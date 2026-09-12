@@ -33,7 +33,7 @@ public final class OneCapitalCoordinator {
         return new BlockPos(state.anchorX, 0, state.anchorZ);
     }
 
-    /** 0.20 deliberately rebuilds once even when a 0.19 marker exists, so old buried NPCs are cleaned up. */
+    /** 0.20 rebuilds once even over a 0.19 world so old buried NPCs are migrated to the surface. */
     public static boolean ensure020(ServerWorld world) {
         KingdomWorldState state = KingdomWorldState.get(world);
         anchor(world);
@@ -42,13 +42,10 @@ public final class OneCapitalCoordinator {
             return false;
         }
         rebuildAll(world);
-        state.built020 = true;
-        state.markDirty();
-        syncWorldSpawn(world);
         return true;
     }
 
-    public static void rebuildAll(ServerWorld world) {
+    public static int rebuildAll(ServerWorld world) {
         BlockPos base = anchor(world);
         for (Site site : SITES) {
             MedievalKingdoms.Nation nation = MedievalKingdoms.nation(site.id());
@@ -58,36 +55,36 @@ public final class OneCapitalCoordinator {
                 placeSignature(world, rough);
             }
         }
+        int npcs = NpcBootstrap020.respawnAll(world);
         KingdomWorldState state = KingdomWorldState.get(world);
         state.built020 = true;
         state.markDirty();
         syncWorldSpawn(world);
+        return npcs;
     }
 
-    public static boolean rebuildOne(ServerWorld world, String id) {
+    public static int rebuildOne(ServerWorld world, String id) {
         Site site = site(id);
         MedievalKingdoms.Nation nation = MedievalKingdoms.nation(id);
-        if (site == null || nation == null) return false;
+        if (site == null || nation == null) return -1;
         BlockPos base = anchor(world);
         BlockPos rough = base.add(site.dx(), 0, site.dz());
         MedievalKingdoms.rebuild(world, rough, nation);
         placeSignature(world, rough);
+        int npcs = NpcBootstrap020.respawnOne(world, id);
         if ("central_empire".equals(id)) syncWorldSpawn(world);
-        return true;
+        return npcs;
     }
 
-    /** Safe plaza point inside the central capital. */
+    /** Safe open plaza inside the central capital. */
     public static BlockPos safeCentralSpawn(ServerWorld world) {
         BlockPos base = anchor(world);
         int x = base.getX();
         int z = base.getZ() + 32;
-        // The rebuilt plaza/road is open here. Heightmap returns the first air block above the surface.
+        world.getChunk(x >> 4, z >> 4);
         int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z);
         y = Math.max(world.getBottomY() + 8, Math.min(world.getTopY() - 4, y));
-        BlockPos candidate = new BlockPos(x, y, z);
-        // Force the target chunk before teleport/spawn operations.
-        world.getChunk(candidate.getX() >> 4, candidate.getZ() >> 4);
-        return candidate;
+        return new BlockPos(x, y, z);
     }
 
     public static void syncWorldSpawn(ServerWorld world) {
@@ -115,9 +112,7 @@ public final class OneCapitalCoordinator {
             BlockPos p = new BlockPos(base.getX(), y, base.getZ());
             if (world.getBlockState(p).isOf(Blocks.LODESTONE)
                 && world.getBlockState(p.east()).isOf(Blocks.EMERALD_BLOCK)
-                && world.getBlockState(p.west()).isOf(Blocks.AMETHYST_BLOCK)) {
-                return true;
-            }
+                && world.getBlockState(p.west()).isOf(Blocks.AMETHYST_BLOCK)) return true;
         }
         return false;
     }
