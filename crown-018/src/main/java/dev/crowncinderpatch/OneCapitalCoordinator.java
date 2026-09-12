@@ -6,7 +6,7 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
 
-/** Coordinates one surface capital per nation and owns the safe world spawn for 0.20. */
+/** Coordinates one surface capital per nation, owns safe spawn, and guarantees initial NPC population. */
 public final class OneCapitalCoordinator {
     private OneCapitalCoordinator() {}
 
@@ -33,16 +33,21 @@ public final class OneCapitalCoordinator {
         return new BlockPos(state.anchorX, 0, state.anchorZ);
     }
 
-    /** 0.20 rebuilds once even over a 0.19 world so old buried NPCs are migrated to the surface. */
+    /** Builds once. If a previous 0.20 world has no seeded NPC state, NPCs are populated automatically on join. */
     public static boolean ensure020(ServerWorld world) {
         KingdomWorldState state = KingdomWorldState.get(world);
         anchor(world);
-        if (state.built020) {
-            syncWorldSpawn(world);
-            return false;
+        if (!state.built020) {
+            rebuildAll(world);
+            return true;
         }
-        rebuildAll(world);
-        return true;
+        if (!state.npcsSeeded) {
+            int count = NpcBootstrap020.respawnAll(world);
+            state.npcsSeeded = count >= NpcBootstrap020.expectedTotal();
+            state.markDirty();
+        }
+        syncWorldSpawn(world);
+        return false;
     }
 
     public static int rebuildAll(ServerWorld world) {
@@ -58,6 +63,7 @@ public final class OneCapitalCoordinator {
         int npcs = NpcBootstrap020.respawnAll(world);
         KingdomWorldState state = KingdomWorldState.get(world);
         state.built020 = true;
+        state.npcsSeeded = npcs >= NpcBootstrap020.expectedTotal();
         state.markDirty();
         syncWorldSpawn(world);
         return npcs;
@@ -72,11 +78,13 @@ public final class OneCapitalCoordinator {
         MedievalKingdoms.rebuild(world, rough, nation);
         placeSignature(world, rough);
         int npcs = NpcBootstrap020.respawnOne(world, id);
+        KingdomWorldState state = KingdomWorldState.get(world);
+        state.npcsSeeded = false;
+        state.markDirty();
         if ("central_empire".equals(id)) syncWorldSpawn(world);
         return npcs;
     }
 
-    /** Safe open plaza inside the central capital. */
     public static BlockPos safeCentralSpawn(ServerWorld world) {
         BlockPos base = anchor(world);
         int x = base.getX();
