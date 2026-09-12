@@ -59,7 +59,9 @@ public final class CrownCinderPatch implements ModInitializer {
                             p.giveItemStack(new ItemStack(ROYAL_GROWTH_TOME));
                             p.sendMessage(Text.literal("§d영웅의 경험서§f와 §6왕실 성장의 서§f를 지급했습니다."), false);
                             return 1;
-                        })))
+                        }))));
+
+            dispatcher.register(CommandManager.literal("rpg")
                 .then(CommandManager.literal("xp")
                     .then(CommandManager.literal("give")
                         .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 1_000_000))
@@ -69,7 +71,9 @@ public final class CrownCinderPatch implements ModInitializer {
                                 boolean integrated = RpgProgressBridge.addXp(p, amount);
                                 RpgProgressBridge.feedback(p, "+" + amount + " XP", integrated);
                                 return 1;
-                            }))))
+                            }))))) ;
+
+            dispatcher.register(CommandManager.literal("rpg")
                 .then(CommandManager.literal("kingdom").requires(s -> s.hasPermissionLevel(2))
                     .then(CommandManager.literal("repairground")
                         .executes(ctx -> {
@@ -99,7 +103,7 @@ public final class CrownCinderPatch implements ModInitializer {
                                 MedievalKingdoms.rebuild(w, spawn.add(n.dx(), 0, n.dz()), n);
                                 ctx.getSource().sendFeedback(() -> Text.literal("§a" + n.name() + " 재건 완료"), true);
                                 return 1;
-                            }))));
+                            }))))));
         });
     }
 }
