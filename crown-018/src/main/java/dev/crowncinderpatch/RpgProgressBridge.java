@@ -27,7 +27,6 @@ public final class RpgProgressBridge {
     public static boolean addLevels(ServerPlayerEntity player, int amount) {
         try {
             Object progress = progress(player);
-            if (progress == null) throw new IllegalStateException("No Crown progress object");
             Field level = field(progress, "level");
             Field xp = field(progress, "xp");
             Field points = field(progress, "points");
@@ -49,7 +48,6 @@ public final class RpgProgressBridge {
         target = Math.max(1, Math.min(100, target));
         try {
             Object progress = progress(player);
-            if (progress == null) throw new IllegalStateException("No Crown progress object");
             Field level = field(progress, "level");
             Field xp = field(progress, "xp");
             Field points = field(progress, "points");
@@ -66,51 +64,101 @@ public final class RpgProgressBridge {
         }
     }
 
-    public static boolean addPoints(ServerPlayerEntity player, int amount) {
+    public static int getLevel(ServerPlayerEntity player) {
         try {
-            Object progress = progress(player);
-            Field points = field(progress, "points");
-            long next = (long) points.getInt(progress) + amount;
-            points.setInt(progress, (int)Math.max(0, Math.min(1_000_000, next)));
-            dirtyAndApply(player);
-            return true;
+            Object p = progress(player);
+            return field(p, "level").getInt(p);
         } catch (Throwable ignored) {
-            return false;
+            return player.experienceLevel;
         }
     }
 
-    public static boolean setPoints(ServerPlayerEntity player, int amount) {
+    public static int addPoints(ServerPlayerEntity player, int amount) {
         try {
-            Object progress = progress(player);
-            field(progress, "points").setInt(progress, Math.max(0, Math.min(1_000_000, amount)));
+            Object p = progress(player);
+            Field points = field(p, "points");
+            int max = maxUnspentPoints(p);
+            int value = Math.max(0, Math.min(max, points.getInt(p) + amount));
+            points.setInt(p, value);
             dirtyAndApply(player);
-            return true;
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    public static int getPoints(ServerPlayerEntity player) {
-        try {
-            return field(progress(player), "points").getInt(progress(player));
+            return value;
         } catch (Throwable ignored) {
             return -1;
         }
     }
 
+    public static int setPoints(ServerPlayerEntity player, int amount) {
+        try {
+            Object p = progress(player);
+            int value = Math.max(0, Math.min(maxUnspentPoints(p), amount));
+            field(p, "points").setInt(p, value);
+            dirtyAndApply(player);
+            return value;
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    public static int maxPoints(ServerPlayerEntity player) {
+        try {
+            Object p = progress(player);
+            int value = maxUnspentPoints(p);
+            field(p, "points").setInt(p, value);
+            dirtyAndApply(player);
+            return value;
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    public static int getPoints(ServerPlayerEntity player) {
+        try {
+            Object p = progress(player);
+            return field(p, "points").getInt(p);
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    public static int addStat(ServerPlayerEntity player, String stat, int amount) {
+        try {
+            Object p = progress(player);
+            String fieldName = statField(stat);
+            if (fieldName == null) return Integer.MIN_VALUE;
+            Field f = field(p, fieldName);
+            int value = Math.max(0, Math.min(10000, f.getInt(p) + amount));
+            f.setInt(p, value);
+            dirtyAndApply(player);
+            return value;
+        } catch (Throwable ignored) {
+            return Integer.MIN_VALUE;
+        }
+    }
+
+    public static int setStat(ServerPlayerEntity player, String stat, int amount) {
+        try {
+            Object p = progress(player);
+            String fieldName = statField(stat);
+            if (fieldName == null) return Integer.MIN_VALUE;
+            int value = Math.max(0, Math.min(10000, amount));
+            field(p, fieldName).setInt(p, value);
+            dirtyAndApply(player);
+            return value;
+        } catch (Throwable ignored) {
+            return Integer.MIN_VALUE;
+        }
+    }
+
     public static int getStrength(ServerPlayerEntity player) {
         try {
-            Object progress = progress(player);
-            return field(progress, "strength").getInt(progress);
+            Object p = progress(player);
+            return field(p, "strength").getInt(p);
         } catch (Throwable ignored) {
             return 0;
         }
     }
 
-    /**
-     * Re-applies Crown & Cinder's own configured attribute modifiers. This is intentionally called after
-     * item/equipment updates so custom weapon attribute swaps cannot leave the Strength modifier missing.
-     */
+    /** Re-applies Crown & Cinder's own configured modifiers after equipment swaps. */
     public static void refreshCombatStats(ServerPlayerEntity player) {
         try {
             Class<?> service = Class.forName("dev.crowncinder.progress.ProgressService");
@@ -118,13 +166,30 @@ public final class RpgProgressBridge {
         } catch (Throwable ignored) {}
     }
 
-    public static int getLevel(ServerPlayerEntity player) {
-        try {
-            Object progress = progress(player);
-            return field(progress, "level").getInt(progress);
-        } catch (Throwable ignored) {
-            return player.experienceLevel;
-        }
+    private static int maxUnspentPoints(Object p) throws Exception {
+        int level = field(p, "level").getInt(p);
+        int spent = 0;
+        String[] stats = {"strength","vitality","defense","agility","attackSpeed","moveSpeed","magicPower","magicDefense","critChance","critDamage","regeneration","stamina"};
+        for (String name : stats) spent += Math.max(0, field(p, name).getInt(p));
+        return Math.max(0, Math.max(0, (level - 1) * 3) - spent);
+    }
+
+    private static String statField(String stat) {
+        return switch (stat.toLowerCase()) {
+            case "strength", "str", "힘" -> "strength";
+            case "vitality", "vit", "체력" -> "vitality";
+            case "defense", "def", "방어" -> "defense";
+            case "agility", "agi", "민첩" -> "agility";
+            case "attackspeed", "attack_speed" -> "attackSpeed";
+            case "movespeed", "move_speed" -> "moveSpeed";
+            case "magic", "magicpower" -> "magicPower";
+            case "magicdefense" -> "magicDefense";
+            case "critchance" -> "critChance";
+            case "critdamage" -> "critDamage";
+            case "regen", "regeneration" -> "regeneration";
+            case "stamina" -> "stamina";
+            default -> null;
+        };
     }
 
     private static Object progress(ServerPlayerEntity player) throws Exception {
