@@ -9,7 +9,6 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.command.CommandSource;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
-import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.mob.HostileEntity;
@@ -42,7 +41,6 @@ import net.minecraft.world.World;
 import net.minecraft.world.biome.BiomeKeys;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.List;
 
 /** Crash-safe feature layer for Crown & Cinder 0.22. */
@@ -315,7 +313,7 @@ public final class Safe023 implements ModInitializer {
                     return TypedActionResult.success(stack, false);
                 }
 
-                castSpell(p, stack, selected);
+                castSpell(p, selected);
                 return TypedActionResult.success(stack, false);
             } catch (Throwable t) {
                 p.sendMessage(Text.literal("§c마법 사용 중 오류를 안전하게 차단했습니다."), false);
@@ -324,7 +322,7 @@ public final class Safe023 implements ModInitializer {
         }
     }
 
-    private static void castSpell(ServerPlayerEntity p, ItemStack staff, int spell) {
+    private static void castSpell(ServerPlayerEntity p, int spell) {
         ServerWorld sw = p.getServerWorld();
         int magicPower = Math.max(0, getStat(p, "magic"));
         double damage = spellBaseDamage(spell) + magicPower * spellMagicScale(spell);
@@ -334,7 +332,7 @@ public final class Safe023 implements ModInitializer {
 
         Vec3d start = p.getEyePos();
         Vec3d dir = p.getRotationVec(1.0f).normalize();
-        LivingEntity hit = null;
+        HostileEntity hit = null;
         Vec3d impact = start.add(dir.multiply(range));
         int trailCount = Math.min(9, 2 + spell / 2);
 
