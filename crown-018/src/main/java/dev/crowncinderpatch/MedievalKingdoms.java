@@ -4,9 +4,12 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.ChestBlockEntity;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.passive.VillagerEntity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.registry.tag.BlockTags;
@@ -22,6 +25,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * One-capital-per-nation builder for Crown & Cinder 0.19.
+ *
+ * Important design rule: a capital is generated once on one surface terrace. Before a rebuild, legacy
+ * named NPCs are removed and the old underground hollow layer is sealed so rulers cannot remain trapped
+ * under the new city.
+ */
 public final class MedievalKingdoms {
     private MedievalKingdoms() {}
 
@@ -57,18 +67,17 @@ public final class MedievalKingdoms {
         return b.toString();
     }
 
+    /** The central marker is the single source of truth: no second capital is generated above/below it. */
     public static boolean hasGenerated(ServerWorld world) {
         BlockPos spawn = world.getSpawnPos();
-        int x = spawn.getX(), z = spawn.getZ();
-        for (int y = world.getBottomY() + 5; y < world.getTopY() - 2; y++) {
-            if (world.getBlockState(new BlockPos(x, y, z)).isOf(Blocks.LODESTONE)) return true;
+        for (int y = world.getBottomY() + 4; y < world.getTopY() - 2; y++) {
+            if (world.getBlockState(new BlockPos(spawn.getX(), y, spawn.getZ())).isOf(Blocks.LODESTONE)) return true;
         }
         return false;
     }
 
     public static void ensureFreshWorld(ServerWorld world) {
-        if (hasGenerated(world)) return;
-        if (world.getTime() > 6000L) return;
+        if (hasGenerated(world) || world.getTime() > 6000L) return;
         rebuildAll(world);
     }
 
@@ -80,8 +89,10 @@ public final class MedievalKingdoms {
     public static void rebuild(ServerWorld world, BlockPos roughCenter, Nation nation) {
         int y = sampleBuildHeight(world, roughCenter.getX(), roughCenter.getZ());
         BlockPos c = new BlockPos(roughCenter.getX(), y, roughCenter.getZ());
-        clearOldPatchNpcs(world, c);
-        prepareTerrace(world, c, nation.palette);
+
+        clearLegacyCapitalEntities(world, c);
+        prepareSingleSurface(world, c, nation.palette);
+
         buildRoads(world, c, nation.palette);
         buildInnerWall(world, c, nation.palette);
         buildInnerGatehouse(world, c, nation.palette);
@@ -92,7 +103,6 @@ public final class MedievalKingdoms {
         buildChapel(world, c.add(-25, 0, -12), nation.palette);
         buildMarket(world, c.add(0, 0, 22), nation.palette);
         buildStables(world, c.add(27, 0, 18), nation.palette);
-
         buildGuildHall(world, c.add(-54, 0, -22), nation.palette, true);
         buildGuildHall(world, c.add(54, 0, -22), nation.palette, false);
         buildTavern(world, c.add(-54, 0, 20), nation.palette);
@@ -103,9 +113,13 @@ public final class MedievalKingdoms {
         placeMarker(world, c);
     }
 
+    /**
+     * Samples untouched terrain well outside the old inner castle. This prevents an already-buried castle roof
+     * from being mistaken for the natural ground height.
+     */
     public static int sampleBuildHeight(ServerWorld world, int cx, int cz) {
         List<Integer> samples = new ArrayList<>();
-        int[] radii = {80, 86, 92};
+        int[] radii = {82, 90, 98};
         for (int r : radii) {
             for (int i = -r; i <= r; i += 12) {
                 samples.add(surfaceY(world, cx + i, cz - r));
@@ -118,14 +132,14 @@ public final class MedievalKingdoms {
         if (samples.isEmpty()) return Math.max(world.getSeaLevel(), world.getBottomY() + 8);
         Collections.sort(samples);
         int median = samples.get(samples.size() / 2);
-        return Math.max(world.getBottomY() + 6, Math.min(world.getTopY() - 45, median));
+        return Math.max(world.getBottomY() + 8, Math.min(world.getTopY() - 48, median));
     }
 
     private static int surfaceY(ServerWorld world, int x, int z) {
         int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
         y = Math.max(y, world.getBottomY() + 1);
         BlockPos.Mutable p = new BlockPos.Mutable(x, y, z);
-        for (int i = 0; i < 22 && y > world.getBottomY() + 1; i++) {
+        for (int i = 0; i < 28 && y > world.getBottomY() + 1; i++) {
             BlockState state = world.getBlockState(p.set(x, y, z));
             if (!state.isAir() && !state.isIn(BlockTags.LEAVES) && !state.isIn(BlockTags.LOGS)) return y;
             y--;
@@ -133,32 +147,49 @@ public final class MedievalKingdoms {
         return y;
     }
 
-    private static void prepareTerrace(ServerWorld world, BlockPos c, Palette p) {
+    /**
+     * Creates exactly one build plane. The old hollow layer directly beneath the inner city is replaced by a
+     * solid foundation, while anything above the new plane is cleared before new buildings are placed.
+     */
+    private static void prepareSingleSurface(ServerWorld world, BlockPos c, Palette p) {
         final int r = 72;
         final int y = c.getY();
         BlockPos.Mutable m = new BlockPos.Mutable();
+
         for (int x = -r; x <= r; x++) {
             for (int z = -r; z <= r; z++) {
-                int wx = c.getX() + x, wz = c.getZ() + z;
+                int wx = c.getX() + x;
+                int wz = c.getZ() + z;
                 int old = surfaceY(world, wx, wz);
-                int top = Math.min(world.getTopY() - 2, Math.max(old, y + 28));
+                int top = Math.min(world.getTopY() - 2, Math.max(old, y + 30));
+
+                // Nothing from an old capital is allowed to remain above the new city plane.
                 for (int yy = y + 1; yy <= top; yy++) {
-                    BlockState state = world.getBlockState(m.set(wx, yy, wz));
-                    if (!state.isAir()) world.setBlockState(m, Blocks.AIR.getDefaultState(), 2);
+                    if (!world.getBlockState(m.set(wx, yy, wz)).isAir()) {
+                        world.setBlockState(m, Blocks.AIR.getDefaultState(), 2);
+                    }
                 }
-                int floor = Math.max(world.getBottomY() + 1, Math.min(old, y));
-                for (int yy = floor + 1; yy < y; yy++) {
+
+                // Fill from the natural terrain up to the city plane.
+                int natural = Math.max(world.getBottomY() + 1, Math.min(old, y));
+                for (int yy = natural + 1; yy < y; yy++) {
                     Block fill = yy >= y - 3 ? Blocks.DIRT : p.wall;
                     world.setBlockState(m.set(wx, yy, wz), fill.getDefaultState(), 2);
                 }
-                world.setBlockState(m.set(wx, y, wz), Blocks.GRASS_BLOCK.getDefaultState(), 2);
-                if (old < y - 7 && ((x + r) % 5 == 0 || (z + r) % 5 == 0)) {
-                    for (int yy = y - 1; yy >= Math.max(old, y - 40); yy--) {
-                        BlockState state = world.getBlockState(m.set(wx, yy, wz));
-                        if (!state.isAir() && state.getFluidState().isEmpty()) break;
-                        world.setBlockState(m, p.wall.getDefaultState(), 2);
+
+                // In the inner city, overwrite the old underground hollow castle layer. This removes the
+                // below-ground duplicate that trapped rulers/NPCs in older versions.
+                if (Math.abs(x) <= 46 && Math.abs(z) <= 46) {
+                    int low = Math.max(world.getBottomY() + 1, y - 14);
+                    for (int yy = low; yy < y - 3; yy++) {
+                        world.setBlockState(m.set(wx, yy, wz), p.wall.getDefaultState(), 2);
+                    }
+                    for (int yy = Math.max(low, y - 3); yy < y; yy++) {
+                        world.setBlockState(m.set(wx, yy, wz), Blocks.DIRT.getDefaultState(), 2);
                     }
                 }
+
+                world.setBlockState(m.set(wx, y, wz), Blocks.GRASS_BLOCK.getDefaultState(), 2);
             }
         }
     }
@@ -170,10 +201,11 @@ public final class MedievalKingdoms {
                 set(w, c.add(i, 0, d), p.road);
             }
         }
-        int[] rings = {-52, 52};
-        for (int z : rings) for (int i = -62; i <= 62; i++) {
-            set(w, c.add(i, 0, z), p.road);
-            set(w, c.add(z, 0, i), p.road);
+        for (int ring : new int[]{-52, 52}) {
+            for (int i = -62; i <= 62; i++) {
+                set(w, c.add(i, 0, ring), p.road);
+                set(w, c.add(ring, 0, i), p.road);
+            }
         }
         for (int x = -7; x <= 7; x++) for (int z = 14; z <= 30; z++) set(w, c.add(x, 0, z), p.trim);
     }
@@ -196,10 +228,6 @@ public final class MedievalKingdoms {
         buildTower(w, c.add(0, 0, -67), p, 14);
         buildTower(w, c.add(-67, 0, 0), p, 14);
         buildTower(w, c.add(67, 0, 0), p, 14);
-        for (int x = -60; x <= 60; x += 10) {
-            lanternPost(w, c.add(x, 1, -64), p);
-            lanternPost(w, c.add(x, 1, 64), p);
-        }
     }
 
     private static void buildSquareWall(ServerWorld w, BlockPos c, Palette p, int r, int hMax) {
@@ -249,10 +277,12 @@ public final class MedievalKingdoms {
             if (Math.abs(x) == r || Math.abs(z) == r) set(w, c.add(x, height + 1, z), p.trim);
         }
         for (int x = -r; x <= r; x += 2) {
-            set(w, c.add(x, height + 2, -r), p.wall); set(w, c.add(x, height + 2, r), p.wall);
+            set(w, c.add(x, height + 2, -r), p.wall);
+            set(w, c.add(x, height + 2, r), p.wall);
         }
         for (int z = -r; z <= r; z += 2) {
-            set(w, c.add(-r, height + 2, z), p.wall); set(w, c.add(r, height + 2, z), p.wall);
+            set(w, c.add(-r, height + 2, z), p.wall);
+            set(w, c.add(r, height + 2, z), p.wall);
         }
     }
 
@@ -266,6 +296,7 @@ public final class MedievalKingdoms {
             set(w, c.add(-10 + i, 2 + i / 2, 7), p.trim);
             set(w, c.add(-10 + i, 2 + i / 2, 8), p.trim);
         }
+        // Throne area on the same, above-ground first floor.
         set(w, c.add(0, 2, -8), p.accent);
         set(w, c.add(0, 3, -8), Blocks.OAK_STAIRS);
         set(w, c.add(0, 4, -9), p.accent);
@@ -291,7 +322,8 @@ public final class MedievalKingdoms {
     private static void stall(ServerWorld w, BlockPos c, Block cloth) {
         for (int dx = -3; dx <= 3; dx++) for (int dz = -2; dz <= 2; dz++) set(w, c.add(dx, 1, dz), Blocks.OAK_PLANKS);
         for (int dx : new int[]{-3, 3}) for (int dz : new int[]{-2, 2}) {
-            set(w, c.add(dx, 2, dz), Blocks.OAK_FENCE); set(w, c.add(dx, 3, dz), Blocks.OAK_FENCE);
+            set(w, c.add(dx, 2, dz), Blocks.OAK_FENCE);
+            set(w, c.add(dx, 3, dz), Blocks.OAK_FENCE);
         }
         for (int dx = -3; dx <= 3; dx++) for (int dz = -2; dz <= 2; dz++) set(w, c.add(dx, 4, dz), cloth);
         set(w, c.add(0, 2, 0), Blocks.BARREL);
@@ -360,6 +392,7 @@ public final class MedievalKingdoms {
         }
     }
 
+    /** Building floor is always at cY+1; NPC helper below verifies this floor before spawning. */
     private static void building(ServerWorld w, BlockPos c, int rx, int rz, int height, Block lower, Block upper, Block roof) {
         for (int x = -rx; x <= rx; x++) for (int z = -rz; z <= rz; z++) set(w, c.add(x, 1, z), Blocks.SPRUCE_PLANKS);
         for (int y = 2; y <= height; y++) for (int x = -rx; x <= rx; x++) for (int z = -rz; z <= rz; z++) {
@@ -368,7 +401,9 @@ public final class MedievalKingdoms {
                 boolean beam = x % 4 == 0 || z % 4 == 0 || y == 2 || y == height;
                 boolean window = y == 4 && ((Math.abs(x) % 4 == 2) || (Math.abs(z) % 4 == 2));
                 set(w, c.add(x, y, z), window ? Blocks.GLASS_PANE : (beam ? upper : lower));
-            } else set(w, c.add(x, y, z), Blocks.AIR);
+            } else {
+                set(w, c.add(x, y, z), Blocks.AIR);
+            }
         }
         for (int x = -rx - 1; x <= rx + 1; x++) for (int z = -rz - 1; z <= rz + 1; z++) set(w, c.add(x, height + 1, z), roof);
         set(w, c.add(0, 2, rz), Blocks.AIR);
@@ -376,49 +411,55 @@ public final class MedievalKingdoms {
     }
 
     private static void spawnFantasyCitizens(ServerWorld world, BlockPos c, Nation n) {
+        String ruler = "central_empire".equals(n.id) ? "황제" : "국왕";
         String[] roles = {
-            "왕실 시종","궁정 서기관","재무관","왕실 사제","왕실 요리사","왕궁 하인",
+            ruler,"왕실 시종","궁정 서기관","재무관","왕실 사제","왕실 요리사","왕궁 하인",
             "기사단장","기사 부단장","왕실 기사","왕실 기사","기사 교관","기사 보급관",
             "용병단장","베테랑 용병","베테랑 용병","정찰 용병","용병 접수원","현상금 담당관",
             "여관주인","주방장","음유시인","대장장이","갑옷 장인","도구 장인",
             "시장 상인","약초상","빵집 주인","직물 상인","지도 제작자","가죽 장인",
             "농부","농부","석공","어부","마구간지기","마을 촌장",
-            "주민","주민","주민","주민","주민","주민"
+            "주민","주민","주민","주민","주민","주민","주민","주민"
         };
         int[][] pos = {
-            {-4,-9},{4,-9},{-5,-2},{-25,-12},{2,-12},{-2,-4},
+            {0,-8},{-4,-5},{4,-5},{-5,-2},{-25,-12},{2,-12},{-2,-4},
             {-54,-22},{-51,-22},{-57,-18},{-51,-18},{-57,-26},{-51,-26},
             {54,-22},{51,-22},{57,-18},{51,-18},{57,-26},{51,-26},
             {-54,20},{-51,20},{-57,23},{54,20},{51,20},{57,20},
             {-10,22},{0,22},{10,22},{-15,27},{15,27},{20,22},
             {-54,45},{-36,54},{-15,54},{15,54},{36,54},{54,45},
-            {-54,5},{54,5},{-54,-45},{-36,-54},{36,-54},{54,-45}
+            {-54,5},{54,5},{-54,-45},{-36,-54},{36,-54},{54,-45},{-15,-54},{15,-54}
         };
         VillagerProfession[] jobs = {
-            VillagerProfession.LIBRARIAN, VillagerProfession.LIBRARIAN, VillagerProfession.CARTOGRAPHER, VillagerProfession.CLERIC, VillagerProfession.BUTCHER, VillagerProfession.FARMER,
+            VillagerProfession.CARTOGRAPHER, VillagerProfession.LIBRARIAN, VillagerProfession.LIBRARIAN, VillagerProfession.CARTOGRAPHER, VillagerProfession.CLERIC, VillagerProfession.BUTCHER, VillagerProfession.FARMER,
             VillagerProfession.WEAPONSMITH, VillagerProfession.ARMORER, VillagerProfession.WEAPONSMITH, VillagerProfession.ARMORER, VillagerProfession.WEAPONSMITH, VillagerProfession.TOOLSMITH,
             VillagerProfession.WEAPONSMITH, VillagerProfession.LEATHERWORKER, VillagerProfession.FLETCHER, VillagerProfession.FLETCHER, VillagerProfession.CARTOGRAPHER, VillagerProfession.LIBRARIAN,
             VillagerProfession.BUTCHER, VillagerProfession.FARMER, VillagerProfession.LIBRARIAN, VillagerProfession.WEAPONSMITH, VillagerProfession.ARMORER, VillagerProfession.TOOLSMITH,
             VillagerProfession.CARTOGRAPHER, VillagerProfession.CLERIC, VillagerProfession.FARMER, VillagerProfession.SHEPHERD, VillagerProfession.CARTOGRAPHER, VillagerProfession.LEATHERWORKER,
             VillagerProfession.FARMER, VillagerProfession.FARMER, VillagerProfession.MASON, VillagerProfession.FISHERMAN, VillagerProfession.LEATHERWORKER, VillagerProfession.CARTOGRAPHER,
-            VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE
+            VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE, VillagerProfession.NONE
         };
 
         for (int i = 0; i < roles.length; i++) {
             VillagerEntity v = EntityType.VILLAGER.create(world);
             if (v == null) continue;
             v.setVillagerData(v.getVillagerData().withType(VillagerType.PLAINS).withProfession(jobs[i]).withLevel(5));
-            double px = c.getX() + pos[i][0] + 0.5;
-            double pz = c.getZ() + pos[i][1] + 0.5;
-            v.refreshPositionAndAngles(px, c.getY() + 2, pz, world.random.nextFloat() * 360f, 0f);
+
+            int x = c.getX() + pos[i][0];
+            int z = c.getZ() + pos[i][1];
+            int sy = safeSpawnY(world, x, z, c.getY() + 2);
+            v.refreshPositionAndAngles(x + 0.5, sy, z + 0.5, world.random.nextFloat() * 360f, 0f);
             v.setCustomName(Text.literal("§6[" + n.name + "] §f" + roles[i]));
-            v.setCustomNameVisible(i < 18);
+            v.setCustomNameVisible(i < 19);
             v.setPersistent();
-            v.addCommandTag("crown018_npc");
-            v.addCommandTag("crown018_" + n.id);
-            if (i >= 6 && i <= 17) {
-                v.equipStack(EquipmentSlot.HEAD, new ItemStack(i <= 11 ? Items.IRON_HELMET : Items.CHAINMAIL_HELMET));
-            } else if (i < 6) {
+            v.addCommandTag("crown019_npc");
+            v.addCommandTag("crown019_" + n.id);
+
+            if (i == 0) {
+                v.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.GOLDEN_HELMET));
+            } else if (i >= 7 && i <= 18) {
+                v.equipStack(EquipmentSlot.HEAD, new ItemStack(i <= 12 ? Items.IRON_HELMET : Items.CHAINMAIL_HELMET));
+            } else if (i < 7) {
                 v.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.GOLDEN_HELMET));
             } else if (i % 4 == 0) {
                 v.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET));
@@ -427,11 +468,41 @@ public final class MedievalKingdoms {
         }
     }
 
-    private static void clearOldPatchNpcs(ServerWorld world, BlockPos c) {
-        Box area = new Box(c.add(-80, -10, -80), c.add(80, 40, 80));
-        for (VillagerEntity v : world.getEntitiesByClass(VillagerEntity.class, area, e -> e.getCommandTags().contains("crown018_npc"))) {
-            v.discard();
+    /** Finds a real floor with two air blocks above it, so no NPC is ever spawned into the buried old city. */
+    private static int safeSpawnY(ServerWorld world, int x, int z, int preferredY) {
+        BlockPos.Mutable p = new BlockPos.Mutable();
+        for (int y = preferredY; y <= preferredY + 12; y++) {
+            BlockState below = world.getBlockState(p.set(x, y - 1, z));
+            BlockState here = world.getBlockState(p.set(x, y, z));
+            BlockState head = world.getBlockState(p.set(x, y + 1, z));
+            if (!below.isAir() && below.getFluidState().isEmpty() && here.isAir() && head.isAir()) return y;
         }
+        return preferredY;
+    }
+
+    /**
+     * Removes both old patch villagers and older named Crown & Cinder capital mobs. Ordinary unnamed monsters and
+     * players are left alone. This is what prevents the old emperor/knights from surviving under the new palace.
+     */
+    private static void clearLegacyCapitalEntities(ServerWorld world, BlockPos c) {
+        Box area = new Box(c.add(-82, -42, -82), c.add(82, 45, 82));
+        List<Entity> remove = world.getOtherEntities(null, area, e -> shouldRemoveLegacyNpc(e));
+        for (Entity e : remove) e.discard();
+    }
+
+    private static boolean shouldRemoveLegacyNpc(Entity e) {
+        if (e instanceof PlayerEntity) return false;
+        for (String tag : e.getCommandTags()) {
+            if (tag.startsWith("crown_" ) || tag.startsWith("crown018_") || tag.startsWith("crown019_")) return true;
+        }
+        if (e instanceof VillagerEntity) return true;
+        if (e instanceof MobEntity && e.hasCustomName()) {
+            String name = e.getCustomName().getString();
+            return name.contains("황제") || name.contains("국왕") || name.contains("기사") || name.contains("궁수")
+                || name.contains("창병") || name.contains("시종") || name.contains("상인") || name.contains("대장장이")
+                || name.contains("용병") || name.contains("사제") || name.contains("서기관");
+        }
+        return false;
     }
 
     private static void lanternPost(ServerWorld w, BlockPos base, Palette p) {
@@ -439,10 +510,6 @@ public final class MedievalKingdoms {
         set(w, base.up(), Blocks.OAK_FENCE);
         set(w, base.up(2), Blocks.OAK_FENCE);
         set(w, base.up(3), Blocks.LANTERN);
-    }
-
-    private static void placeMarker(ServerWorld w, BlockPos c) {
-        set(w, c.down(), Blocks.LODESTONE);
     }
 
     private static void treasure(ServerWorld w, BlockPos pos) {
@@ -455,6 +522,10 @@ public final class MedievalKingdoms {
             chest.setStack(4, new ItemStack(Items.DIAMOND, 3));
             chest.markDirty();
         }
+    }
+
+    private static void placeMarker(ServerWorld w, BlockPos c) {
+        set(w, c, Blocks.LODESTONE);
     }
 
     private static void set(ServerWorld w, BlockPos pos, Block block) {
