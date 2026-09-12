@@ -6,7 +6,7 @@ import net.minecraft.text.Text;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
-/** Best-effort bridge into Crown & Cinder's existing RPG progress without compiling against its internals. */
+/** Best-effort bridge into Crown & Cinder's RPG progress. */
 public final class RpgProgressBridge {
     private RpgProgressBridge() {}
 
@@ -65,12 +65,8 @@ public final class RpgProgressBridge {
     }
 
     public static int getLevel(ServerPlayerEntity player) {
-        try {
-            Object p = progress(player);
-            return field(p, "level").getInt(p);
-        } catch (Throwable ignored) {
-            return player.experienceLevel;
-        }
+        try { return field(progress(player), "level").getInt(progress(player)); }
+        catch (Throwable ignored) { return player.experienceLevel; }
     }
 
     public static int addPoints(ServerPlayerEntity player, int amount) {
@@ -82,9 +78,7 @@ public final class RpgProgressBridge {
             points.setInt(p, value);
             dirtyAndApply(player);
             return value;
-        } catch (Throwable ignored) {
-            return -1;
-        }
+        } catch (Throwable ignored) { return -1; }
     }
 
     public static int setPoints(ServerPlayerEntity player, int amount) {
@@ -94,9 +88,7 @@ public final class RpgProgressBridge {
             field(p, "points").setInt(p, value);
             dirtyAndApply(player);
             return value;
-        } catch (Throwable ignored) {
-            return -1;
-        }
+        } catch (Throwable ignored) { return -1; }
     }
 
     public static int maxPoints(ServerPlayerEntity player) {
@@ -106,18 +98,12 @@ public final class RpgProgressBridge {
             field(p, "points").setInt(p, value);
             dirtyAndApply(player);
             return value;
-        } catch (Throwable ignored) {
-            return -1;
-        }
+        } catch (Throwable ignored) { return -1; }
     }
 
     public static int getPoints(ServerPlayerEntity player) {
-        try {
-            Object p = progress(player);
-            return field(p, "points").getInt(p);
-        } catch (Throwable ignored) {
-            return -1;
-        }
+        try { Object p = progress(player); return field(p, "points").getInt(p); }
+        catch (Throwable ignored) { return -1; }
     }
 
     public static int addStat(ServerPlayerEntity player, String stat, int amount) {
@@ -130,9 +116,7 @@ public final class RpgProgressBridge {
             f.setInt(p, value);
             dirtyAndApply(player);
             return value;
-        } catch (Throwable ignored) {
-            return Integer.MIN_VALUE;
-        }
+        } catch (Throwable ignored) { return Integer.MIN_VALUE; }
     }
 
     public static int setStat(ServerPlayerEntity player, String stat, int amount) {
@@ -144,21 +128,21 @@ public final class RpgProgressBridge {
             field(p, fieldName).setInt(p, value);
             dirtyAndApply(player);
             return value;
-        } catch (Throwable ignored) {
-            return Integer.MIN_VALUE;
-        }
+        } catch (Throwable ignored) { return Integer.MIN_VALUE; }
     }
 
-    public static int getStrength(ServerPlayerEntity player) {
+    public static int getStrength(ServerPlayerEntity player) { return getStat(player, "strength"); }
+    public static int getMagicPower(ServerPlayerEntity player) { return getStat(player, "magic"); }
+
+    public static int getStat(ServerPlayerEntity player, String stat) {
         try {
             Object p = progress(player);
-            return field(p, "strength").getInt(p);
-        } catch (Throwable ignored) {
-            return 0;
-        }
+            String fieldName = statField(stat);
+            if (fieldName == null) return 0;
+            return field(p, fieldName).getInt(p);
+        } catch (Throwable ignored) { return 0; }
     }
 
-    /** Re-applies Crown & Cinder's own configured modifiers after equipment swaps. */
     public static void refreshCombatStats(ServerPlayerEntity player) {
         try {
             Class<?> service = Class.forName("dev.crowncinder.progress.ProgressService");
@@ -177,13 +161,13 @@ public final class RpgProgressBridge {
     private static String statField(String stat) {
         return switch (stat.toLowerCase()) {
             case "strength", "str", "힘" -> "strength";
-            case "vitality", "vit", "체력" -> "vitality";
+            case "vitality", "vit", "체력", "생명" -> "vitality";
             case "defense", "def", "방어" -> "defense";
             case "agility", "agi", "민첩" -> "agility";
-            case "attackspeed", "attack_speed" -> "attackSpeed";
-            case "movespeed", "move_speed" -> "moveSpeed";
-            case "magic", "magicpower" -> "magicPower";
-            case "magicdefense" -> "magicDefense";
+            case "attackspeed", "attack_speed", "공격속도" -> "attackSpeed";
+            case "movespeed", "move_speed", "이동속도" -> "moveSpeed";
+            case "magic", "magicpower", "마력" -> "magicPower";
+            case "magicdefense", "마법방어" -> "magicDefense";
             case "critchance" -> "critChance";
             case "critdamage" -> "critDamage";
             case "regen", "regeneration" -> "regeneration";
@@ -194,8 +178,7 @@ public final class RpgProgressBridge {
 
     private static Object progress(ServerPlayerEntity player) throws Exception {
         Class<?> service = Class.forName("dev.crowncinder.progress.ProgressService");
-        Method get = service.getMethod("get", ServerPlayerEntity.class);
-        return get.invoke(null, player);
+        return service.getMethod("get", ServerPlayerEntity.class).invoke(null, player);
     }
 
     private static Field field(Object target, String name) throws Exception {
@@ -206,17 +189,14 @@ public final class RpgProgressBridge {
 
     private static void dirtyAndApply(ServerPlayerEntity player) throws Exception {
         Class<?> service = Class.forName("dev.crowncinder.progress.ProgressService");
-        Method store = service.getMethod("store", ServerPlayerEntity.class);
-        Object storeObj = store.invoke(null, player);
-        Method dirty = storeObj.getClass().getMethod("markDirty");
-        dirty.invoke(storeObj);
+        Object storeObj = service.getMethod("store", ServerPlayerEntity.class).invoke(null, player);
+        storeObj.getClass().getMethod("markDirty").invoke(storeObj);
         apply(service, player);
     }
 
     private static void apply(Class<?> service, ServerPlayerEntity player) {
-        try {
-            service.getMethod("apply", ServerPlayerEntity.class).invoke(null, player);
-        } catch (Throwable ignored) {}
+        try { service.getMethod("apply", ServerPlayerEntity.class).invoke(null, player); }
+        catch (Throwable ignored) {}
     }
 
     public static void feedback(ServerPlayerEntity player, String what, boolean crownIntegrated) {
