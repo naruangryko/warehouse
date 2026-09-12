@@ -6,7 +6,7 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
 
-/** Coordinates one surface capital per nation, safe spawn, NPCs, royal interiors and armed knight companies. */
+/** Coordinates surface capitals, safe spawn, NPCs, royal interiors and armed knight companies. */
 public final class OneCapitalCoordinator {
     private OneCapitalCoordinator() {}
 
@@ -33,13 +33,22 @@ public final class OneCapitalCoordinator {
         return new BlockPos(state.anchorX, 0, state.anchorZ);
     }
 
-    /** Automatically migrates 0.20 worlds once and fully builds 0.21 capitals on new worlds. */
-    public static boolean ensure021(ServerWorld world) {
+    public static boolean ensure022(ServerWorld world) {
         KingdomWorldState state = KingdomWorldState.get(world);
         anchor(world);
         if (!state.built021) {
             rebuildAll(world);
             return true;
+        }
+        if (!state.built022) {
+            // Existing 0.21 worlds keep their buildings; only military is refreshed to add commanders.
+            BlockPos base = anchor(world);
+            for (Site site : SITES) {
+                MedievalKingdoms.Nation nation = MedievalKingdoms.nation(site.id());
+                if (nation != null) MilitaryBootstrap021.populate(world, base.add(site.dx(), 0, site.dz()), nation);
+            }
+            state.built022 = true;
+            state.markDirty();
         }
         if (!state.npcsSeeded) {
             int count = NpcBootstrap020.respawnAll(world);
@@ -50,8 +59,8 @@ public final class OneCapitalCoordinator {
         return false;
     }
 
-    /** Backward-compatible alias used by older helper code. */
-    public static boolean ensure020(ServerWorld world) { return ensure021(world); }
+    public static boolean ensure021(ServerWorld world) { return ensure022(world); }
+    public static boolean ensure020(ServerWorld world) { return ensure022(world); }
 
     public static int rebuildAll(ServerWorld world) {
         BlockPos base = anchor(world);
@@ -69,6 +78,7 @@ public final class OneCapitalCoordinator {
         KingdomWorldState state = KingdomWorldState.get(world);
         state.built020 = true;
         state.built021 = true;
+        state.built022 = true;
         state.npcsSeeded = npcs >= NpcBootstrap020.expectedTotal();
         state.markDirty();
         syncWorldSpawn(world);
@@ -89,6 +99,7 @@ public final class OneCapitalCoordinator {
         KingdomWorldState state = KingdomWorldState.get(world);
         state.npcsSeeded = false;
         state.built021 = true;
+        state.built022 = true;
         state.markDirty();
         if ("central_empire".equals(id)) syncWorldSpawn(world);
         return npcs;
